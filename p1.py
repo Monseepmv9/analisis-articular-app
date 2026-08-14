@@ -35,11 +35,10 @@ try:
 except ImportError:
     WEBRTC_AVAILABLE = False
 
-# MediaPipe Pose Task Model - Versión Full (mejor precisión, especialmente en
-# puntos periféricos como el pie, a costa de ser algo más lenta que "lite")
+# MediaPipe Pose Task Model - Versión Lite (optimizada para la nube y dispositivos móviles)
 POSE_MODEL_URL = (
     "https://storage.googleapis.com/mediapipe-models/pose_landmarker/"
-    "pose_landmarker_full/float16/1/pose_landmarker_full.task"
+    "pose_landmarker_lite/float16/1/pose_landmarker_lite.task"
 )
 
 # Conexiones del esqueleto de 33 puntos (BlazePose)
@@ -86,6 +85,7 @@ MOVEMENTS = {
         {"id": "extension", "label": "Extensión", "view": "lateral", "mode": "angle3", "lm": {"left": [23, 25, 27], "right": [24, 26, 28]}},
     ],
     "tobillo": [
+        # Corrección: Estabilización de tobillo usando 3 puntos (Rodilla, Tobillo, Metatarso)
         {"id": "dorsiflexion", "label": "Dorsiflexión", "view": "lateral", "mode": "angle3", "lm": {"left": [25, 27, 31], "right": [26, 28, 32]}},
         {"id": "plantiflexion", "label": "Plantiflexión", "view": "lateral", "mode": "angle3", "lm": {"left": [25, 27, 31], "right": [26, 28, 32]}},
     ],
@@ -119,6 +119,17 @@ def angle_from_vertical(vertex, point):
     return float(np.degrees(np.arccos(cos_angle)))
 
 
+def angle_between_vectors(p1, p2, p3, p4):
+    """Ángulo entre el segmento de la pierna (p1->p2) y la planta del pie (p3->p4)."""
+    v1 = np.array([p2[0] - p1[0], p2[1] - p1[1]])
+    v2 = np.array([p4[0] - p3[0], p4[1] - p3[1]])
+    mag1, mag2 = np.linalg.norm(v1), np.linalg.norm(v2)
+    if mag1 == 0 or mag2 == 0:
+        return None
+    cos_angle = np.clip(np.dot(v1, v2) / (mag1 * mag2), -1.0, 1.0)
+    return float(np.degrees(np.arccos(cos_angle)))
+
+
 def pick_main_person(pose_landmarks_list):
     if len(pose_landmarks_list) <= 1:
         return pose_landmarks_list[0] if pose_landmarks_list else None
@@ -139,7 +150,7 @@ def pick_main_person(pose_landmarks_list):
 def download_model_if_needed():
     model_dir = os.path.join(tempfile.gettempdir(), "mediapipe_models")
     os.makedirs(model_dir, exist_ok=True)
-    model_path = os.path.join(model_dir, "pose_landmarker_full.task")
+    model_path = os.path.join(model_dir, "pose_landmarker_lite.task")
     if not os.path.exists(model_path):
         urllib.request.urlretrieve(POSE_MODEL_URL, model_path)
     return model_path
@@ -182,6 +193,10 @@ def analyze_frame(frame, landmarker, movement, side, timestamp_ms, smooth_buffer
     if movement["mode"] == "vertical":
         vertex, point = pts_px
         angle = angle_from_vertical(vertex, point)
+    elif movement["mode"] == "angle4":
+        p1, p2, p3, p4 = pts_px
+        vertex = p2  # El ángulo se dibuja a la altura del tobillo
+        angle = angle_between_vectors(p1, p2, p3, p4)
     else:
         a, b, c = pts_px
         vertex = b
@@ -220,7 +235,7 @@ if WEBRTC_AVAILABLE:
             if self.movement is not None:
                 if self.start_time is None:
                     self.start_time = time.time()
-
+                
                 current_ms = int(time.time() * 1000)
                 if current_ms <= self.last_ts:
                     current_ms = self.last_ts + 1
@@ -229,11 +244,11 @@ if WEBRTC_AVAILABLE:
                 img, angle, low_conf = analyze_frame(
                     img, self.landmarker, self.movement, self.side, current_ms, self.smooth_buffer
                 )
-
+                
                 if angle is not None:
                     t = time.time() - self.start_time
                     self.history.append((t, angle, low_conf))
-
+                    
             return av.VideoFrame.from_ndarray(img, format="bgr24")
 
 
@@ -248,6 +263,9 @@ def process_video(video_path, movement, side, target_fps, preview_placeholder, p
     smooth_buffer = []
     frame_idx = 0
     last_timestamp_ms = int(time.time() * 1000)
+    
+    # Control de red: variable para no saturar la pantalla (Soluciona congelamiento)
+    last_ui_update = time.time() 
 
     while True:
         ret, frame = cap.read()
@@ -264,18 +282,23 @@ def process_video(video_path, movement, side, target_fps, preview_placeholder, p
             frame, angle, low_conf = analyze_frame(
                 frame, landmarker, movement, side, current_ms, smooth_buffer
             )
-
+            
             if angle is not None:
                 history.append((t, angle, low_conf))
 
-            preview_frame = cv2.resize(frame, (0, 0), fx=0.5, fy=0.5)
+            # --- OPTIMIZACIÓN PARA COMPARTIR LINK ---
+            # Actualiza visualización cada 0.3 segundos sin detener el cálculo subyacente
+            current_time = time.time()
+            if current_time - last_ui_update > 0.3:
+                preview_frame = cv2.resize(frame, (0, 0), fx=0.5, fy=0.5)
+                preview_placeholder.image(cv2.cvtColor(preview_frame, cv2.COLOR_BGR2RGB),
+                                          channels="RGB", use_container_width=True)
+                last_ui_update = current_time
 
-            preview_placeholder.image(cv2.cvtColor(preview_frame, cv2.COLOR_BGR2RGB),
-                                      channels="RGB", use_container_width=True)
             if total_frames > 0:
                 progress_bar.progress(min(1.0, frame_idx / total_frames))
                 progress_text.caption(f"Procesando cuadro {frame_idx} de {total_frames}...")
-
+                
         frame_idx += 1
 
     cap.release()
@@ -283,7 +306,7 @@ def process_video(video_path, movement, side, target_fps, preview_placeholder, p
         landmarker.close()
     except Exception:
         pass
-
+        
     progress_bar.progress(1.0)
     progress_text.empty()
     return history
@@ -347,13 +370,23 @@ def build_pdf_report(sessions):
     for s in sessions:
         pdf.set_font("Helvetica", "B", 13)
         pdf.set_text_color(28, 43, 48)
-
+        
         titulo_limpio = s['joint'].replace("—", "-").replace("\u2014", "-")
         pdf.cell(0, 9, f"{titulo_limpio} - {s['date']}", ln=True)
 
-        img_buf = io.BytesIO(s["chart_png"])
-        pdf.image(img_buf, w=150)
+        # --- SOLUCIÓN PARA LA NUBE (Error FPDF imagen virtual) ---
+        with tempfile.NamedTemporaryFile(delete=False, suffix=".png") as tmp_img:
+            tmp_img.write(s["chart_png"])
+            tmp_img_path = tmp_img.name
+
+        pdf.image(tmp_img_path, w=150)
         pdf.ln(2)
+        
+        try:
+            os.remove(tmp_img_path)
+        except Exception:
+            pass
+        # -----------------------------
 
         pdf.set_font("Helvetica", "B", 10)
         pdf.set_fill_color(225, 245, 238)
@@ -361,7 +394,7 @@ def build_pdf_report(sessions):
         pdf.cell(60, 8, "Maximo", border=1, fill=True)
         pdf.cell(60, 8, "Promedio", border=1, fill=True, ln=True)
         pdf.set_font("Helvetica", "", 10)
-
+        
         pdf.cell(60, 8, f"{s['min']:.1f} grados", border=1)
         pdf.cell(60, 8, f"{s['max']:.1f} grados", border=1)
         pdf.cell(60, 8, f"{s['mean']:.1f} grados", border=1, ln=True)
@@ -369,7 +402,7 @@ def build_pdf_report(sessions):
 
     pdf.set_font("Helvetica", "I", 8)
     pdf.set_text_color(120, 130, 135)
-
+    
     pdf.multi_cell(
         0, 4.5,
         "Informe generado por estimacion de video 2D (MediaPipe Pose). "
@@ -405,7 +438,7 @@ with col1:
         "Parte del cuerpo / articulacion",
         list(BODY_PART_LABELS.keys()),
         format_func=lambda k: BODY_PART_LABELS[k],
-        index=4,
+        index=4, 
     )
 with col2:
     movement_options = MOVEMENTS[body_part]
@@ -500,9 +533,9 @@ history = st.session_state.history
 
 if history:
     st.header("4. Evolucion del angulo en el tiempo")
-
+    
     chart_title = f'{BODY_PART_LABELS[body_part]} - {movement["label"]} ({"izq." if side == "left" else "der."})'
-
+    
     fig = make_chart(history, chart_title)
     st.pyplot(fig)
     st.caption("Puntos rojos = cuadros con baja confianza en la deteccion (posible oclusion).")
@@ -546,9 +579,9 @@ if st.session_state.sessions:
         if st.button("Generar informe (PDF)"):
             pdf_bytes = build_pdf_report(st.session_state.sessions)
             last_patient = st.session_state.sessions[-1]["patient"]
-
+            
             safe_filename = last_patient.replace(' ', '_').replace('-', '_')
-
+            
             st.download_button("Descargar informe (PDF)", data=pdf_bytes, file_name=f"informe_{safe_filename}.pdf", mime="application/pdf")
     with col_xlsx:
         excel_buffer = io.BytesIO()
