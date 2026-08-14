@@ -1,12 +1,8 @@
 """
-Prototipo - Análisis de ángulo articular por video (versión Python)
+M.M. - MotionMetrics
 =====================================================================
 Detecta la pose de una persona en un video (usando MediaPipe) y calcula
 el ángulo de la articulación y movimiento elegidos, cuadro a cuadro.
-
-Cómo correrlo:
-    pip install -r requirements.txt
-    streamlit run app.py
 """
 
 import io
@@ -39,10 +35,11 @@ try:
 except ImportError:
     WEBRTC_AVAILABLE = False
 
-# MediaPipe Pose Task Model
+# MediaPipe Pose Task Model - Versión Full (mejor precisión, especialmente en
+# puntos periféricos como el pie, a costa de ser algo más lenta que "lite")
 POSE_MODEL_URL = (
     "https://storage.googleapis.com/mediapipe-models/pose_landmarker/"
-    "pose_landmarker_heavy/float16/1/pose_landmarker_heavy.task"
+    "pose_landmarker_full/float16/1/pose_landmarker_full.task"
 )
 
 # Conexiones del esqueleto de 33 puntos (BlazePose)
@@ -142,7 +139,7 @@ def pick_main_person(pose_landmarks_list):
 def download_model_if_needed():
     model_dir = os.path.join(tempfile.gettempdir(), "mediapipe_models")
     os.makedirs(model_dir, exist_ok=True)
-    model_path = os.path.join(model_dir, "pose_landmarker_heavy.task")
+    model_path = os.path.join(model_dir, "pose_landmarker_full.task")
     if not os.path.exists(model_path):
         urllib.request.urlretrieve(POSE_MODEL_URL, model_path)
     return model_path
@@ -223,7 +220,7 @@ if WEBRTC_AVAILABLE:
             if self.movement is not None:
                 if self.start_time is None:
                     self.start_time = time.time()
-                
+
                 current_ms = int(time.time() * 1000)
                 if current_ms <= self.last_ts:
                     current_ms = self.last_ts + 1
@@ -232,15 +229,15 @@ if WEBRTC_AVAILABLE:
                 img, angle, low_conf = analyze_frame(
                     img, self.landmarker, self.movement, self.side, current_ms, self.smooth_buffer
                 )
-                
+
                 if angle is not None:
                     t = time.time() - self.start_time
                     self.history.append((t, angle, low_conf))
-                    
+
             return av.VideoFrame.from_ndarray(img, format="bgr24")
 
 
-def process_video(video_path, movement, side, target_fps, preview_placeholder, progress_bar):
+def process_video(video_path, movement, side, target_fps, preview_placeholder, progress_bar, progress_text):
     landmarker = create_landmarker()
     cap = cv2.VideoCapture(video_path)
     video_fps = cap.get(cv2.CAP_PROP_FPS) or 30
@@ -267,14 +264,18 @@ def process_video(video_path, movement, side, target_fps, preview_placeholder, p
             frame, angle, low_conf = analyze_frame(
                 frame, landmarker, movement, side, current_ms, smooth_buffer
             )
-            
+
             if angle is not None:
                 history.append((t, angle, low_conf))
 
-            preview_placeholder.image(cv2.cvtColor(frame, cv2.COLOR_BGR2RGB),
+            preview_frame = cv2.resize(frame, (0, 0), fx=0.5, fy=0.5)
+
+            preview_placeholder.image(cv2.cvtColor(preview_frame, cv2.COLOR_BGR2RGB),
                                       channels="RGB", use_container_width=True)
             if total_frames > 0:
                 progress_bar.progress(min(1.0, frame_idx / total_frames))
+                progress_text.caption(f"Procesando cuadro {frame_idx} de {total_frames}...")
+
         frame_idx += 1
 
     cap.release()
@@ -282,8 +283,9 @@ def process_video(video_path, movement, side, target_fps, preview_placeholder, p
         landmarker.close()
     except Exception:
         pass
-        
+
     progress_bar.progress(1.0)
+    progress_text.empty()
     return history
 
 
@@ -345,8 +347,7 @@ def build_pdf_report(sessions):
     for s in sessions:
         pdf.set_font("Helvetica", "B", 13)
         pdf.set_text_color(28, 43, 48)
-        
-        # Limpieza de seguridad: aseguramos que el titulo no contenga guiones largos
+
         titulo_limpio = s['joint'].replace("—", "-").replace("\u2014", "-")
         pdf.cell(0, 9, f"{titulo_limpio} - {s['date']}", ln=True)
 
@@ -360,7 +361,7 @@ def build_pdf_report(sessions):
         pdf.cell(60, 8, "Maximo", border=1, fill=True)
         pdf.cell(60, 8, "Promedio", border=1, fill=True, ln=True)
         pdf.set_font("Helvetica", "", 10)
-        
+
         pdf.cell(60, 8, f"{s['min']:.1f} grados", border=1)
         pdf.cell(60, 8, f"{s['max']:.1f} grados", border=1)
         pdf.cell(60, 8, f"{s['mean']:.1f} grados", border=1, ln=True)
@@ -368,7 +369,7 @@ def build_pdf_report(sessions):
 
     pdf.set_font("Helvetica", "I", 8)
     pdf.set_text_color(120, 130, 135)
-    
+
     pdf.multi_cell(
         0, 4.5,
         "Informe generado por estimacion de video 2D (MediaPipe Pose). "
@@ -383,23 +384,28 @@ def build_pdf_report(sessions):
 # 5. Interfaz Streamlit
 # ----------------------------------------------------------------------------
 
-st.set_page_config(page_title="Análisis de ángulo articular", layout="centered")
-st.title("Prototipo - análisis de ángulo articular por video")
-st.caption("Sube un video, elige la articulación, el movimiento y la vista de cámara.")
+st.set_page_config(
+    page_title="M.M. - MotionMetrics",
+    page_icon="📐",
+    layout="centered"
+)
+
+st.title("M.M. - MotionMetrics 📐")
+st.caption("Sube un video, elige la articulacion, el movimiento y la vista de camara.")
 
 if "sessions" not in st.session_state:
     st.session_state.sessions = []
 if "history" not in st.session_state:
     st.session_state.history = []
 
-st.header("1. Configuración de la prueba")
+st.header("1. Configuracion de la prueba")
 col1, col2 = st.columns(2)
 with col1:
     body_part = st.selectbox(
-        "Parte del cuerpo / articulación",
+        "Parte del cuerpo / articulacion",
         list(BODY_PART_LABELS.keys()),
         format_func=lambda k: BODY_PART_LABELS[k],
-        index=3,
+        index=4,
     )
 with col2:
     movement_options = MOVEMENTS[body_part]
@@ -416,7 +422,7 @@ with col3:
 with col4:
     default_view_idx = 0 if movement["view"] == "lateral" else 1
     camera_view = st.selectbox(
-        "Vista de cámara del video",
+        "Vista de camara del video",
         ["lateral", "frontal"],
         format_func=lambda v: "Lateral (de perfil)" if v == "lateral" else "Frontal (de frente)",
         index=default_view_idx,
@@ -426,27 +432,28 @@ if camera_view != movement["view"]:
     st.warning(
         f'"{movement["label"]}" necesita vista '
         f'{"frontal (de frente)" if movement["view"] == "frontal" else "lateral (de perfil)"} '
-        "para que el ángulo tenga sentido - ajusta la vista de cámara arriba."
+        "para que el angulo tenga sentido - ajusta la vista de camara arriba."
     )
 elif movement["mode"] == "vertical":
     st.info(
-        "Rotación: graba de frente con el codo pegado al cuerpo y flectado a 90 grados. "
-        "El ángulo mide el antebrazo respecto a la vertical - es un proxy clínico."
+        "Rotacion: graba de frente con el codo pegado al cuerpo y flectado a 90 grados. "
+        "El angulo mide el antebrazo respecto a la vertical - es un proxy clinico."
     )
 
-target_fps = st.select_slider("Densidad de análisis", options=[5, 10, 15], value=10, format_func=lambda f: f"{f} cuadros/seg")
+target_fps = st.select_slider("Densidad de analisis", options=[5, 10, 15], value=10, format_func=lambda f: f"{f} cuadros/seg")
 
 st.header("2. Fuente del video")
-source_options = ["Subir un video"] + (["Grabar en vivo desde la cámara"] if WEBRTC_AVAILABLE else [])
-source = st.radio("¿Cómo quieres registrar la prueba?", source_options, horizontal=True)
+source_options = ["Subir un video"] + (["Grabar en vivo desde la camara"] if WEBRTC_AVAILABLE else [])
+source = st.radio("Como quieres registrar la prueba?", source_options, horizontal=True)
 
 preview_placeholder = st.empty()
 progress_bar = st.progress(0.0)
+progress_text = st.empty()
 
 if source == "Subir un video":
     uploaded_file = st.file_uploader("Video de la prueba", type=["mp4", "mov", "avi", "mkv"])
 
-    st.header("3. Análisis")
+    st.header("3. Analisis")
     analyze_disabled = uploaded_file is None or camera_view != movement["view"]
     run_analysis = st.button("Analizar video completo", disabled=analyze_disabled)
 
@@ -456,18 +463,18 @@ if source == "Subir un video":
             tmp_path = tmp.name
 
         with st.spinner("Analizando video cuadro a cuadro..."):
-            history = process_video(tmp_path, movement, side, target_fps, preview_placeholder, progress_bar)
+            history = process_video(tmp_path, movement, side, target_fps, preview_placeholder, progress_bar, progress_text)
         st.session_state.history = history
 
         if not history:
-            st.error("No se detectó a la persona en el video. Revisa encuadre, luz e iluminación.")
+            st.error("No se detecto a la persona en el video. Revisa encuadre, luz e iluminacion.")
         else:
-            st.success(f"Análisis completo - {len(history)} cuadros registrados.")
+            st.success(f"Analisis completo - {len(history)} cuadros registrados.")
 
 else:
-    st.header("3. Análisis")
+    st.header("3. Analisis")
     if camera_view != movement["view"]:
-        st.warning("Ajusta la vista de cámara arriba antes de grabar, o el ángulo no va a tener sentido.")
+        st.warning("Ajusta la vista de camara arriba antes de grabar, o el angulo no va a tener sentido.")
 
     rtc_config = RTCConfiguration({"iceServers": [{"urls": ["stun:stun.l.google.com:19302"]}]})
     ctx = webrtc_streamer(
@@ -482,30 +489,29 @@ else:
         ctx.video_processor.movement = movement
         ctx.video_processor.side = side
 
-    st.caption('Dale permiso de cámara al navegador, ubícate según la vista requerida, haz el movimiento, y presiona "Stop" arriba cuando termines.')
+    st.caption('Dale permiso de camara al navegador, ubicate segun la vista requerida, haz el movimiento, y presiona "Stop" arriba cuando termines.')
 
     if ctx.video_processor and not ctx.state.playing and ctx.video_processor.history:
-        if st.button("Usar esta grabación"):
+        if st.button("Usar esta grabacion"):
             st.session_state.history = ctx.video_processor.history
-            st.success(f"Grabación cargada - {len(st.session_state.history)} cuadros registrados.")
+            st.success(f"Grabacion cargada - {len(st.session_state.history)} cuadros registrados.")
 
 history = st.session_state.history
 
 if history:
-    st.header("4. Evolución del ángulo en el tiempo")
-    
-    # Se usa guion normal y texto seguro
+    st.header("4. Evolucion del angulo en el tiempo")
+
     chart_title = f'{BODY_PART_LABELS[body_part]} - {movement["label"]} ({"izq." if side == "left" else "der."})'
-    
+
     fig = make_chart(history, chart_title)
     st.pyplot(fig)
-    st.caption("Puntos rojos = cuadros con baja confianza en la detección (posible oclusión).")
+    st.caption("Puntos rojos = cuadros con baja confianza en la deteccion (posible oclusion).")
 
     angles = [h[1] for h in history]
     st.header("5. Resultados de la prueba")
     r1, r2, r3 = st.columns(3)
-    r1.metric("Mínimo", f"{min(angles):.1f}°")
-    r2.metric("Máximo", f"{max(angles):.1f}°")
+    r1.metric("Minimo", f"{min(angles):.1f}°")
+    r2.metric("Maximo", f"{max(angles):.1f}°")
     r3.metric("Promedio", f"{sum(angles) / len(angles):.1f}°")
 
     st.header("6. Paciente y registro de sesiones")
@@ -525,13 +531,13 @@ if history:
             "mean": sum(angles) / len(angles),
             "chart_png": fig_to_png_bytes(make_chart(history, chart_title)),
         })
-        st.success("Prueba guardada en el historial de esta sesión.")
+        st.success("Prueba guardada en el historial de esta sesion.")
 
 if st.session_state.sessions:
-    st.subheader("Historial guardado (esta sesión)")
+    st.subheader("Historial guardado (esta sesion)")
     sessions_df = pd.DataFrame([{
-        "RUN": s["run"], "Paciente": s["patient"], "Fecha": s["date"], "Articulación": s["joint"],
-        "Mínimo °": round(s["min"], 1), "Máximo °": round(s["max"], 1), "Promedio °": round(s["mean"], 1)
+        "RUN": s["run"], "Paciente": s["patient"], "Fecha": s["date"], "Articulacion": s["joint"],
+        "Minimo °": round(s["min"], 1), "Maximo °": round(s["max"], 1), "Promedio °": round(s["mean"], 1)
     } for s in st.session_state.sessions])
     st.dataframe(sessions_df, use_container_width=True)
 
@@ -540,10 +546,9 @@ if st.session_state.sessions:
         if st.button("Generar informe (PDF)"):
             pdf_bytes = build_pdf_report(st.session_state.sessions)
             last_patient = st.session_state.sessions[-1]["patient"]
-            
-            # Nombre del archivo seguro sin caracteres especiales
+
             safe_filename = last_patient.replace(' ', '_').replace('-', '_')
-            
+
             st.download_button("Descargar informe (PDF)", data=pdf_bytes, file_name=f"informe_{safe_filename}.pdf", mime="application/pdf")
     with col_xlsx:
         excel_buffer = io.BytesIO()
