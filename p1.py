@@ -37,7 +37,6 @@ except ImportError:
     WEBRTC_AVAILABLE = False
 
 # CORRECCIÓN DE FIDELIDAD: Pasamos del modelo "Lite" al modelo "Full"
-# Este modelo es mucho más robusto para distinguir piernas superpuestas o cruzadas.
 POSE_MODEL_URL = (
     "https://storage.googleapis.com/mediapipe-models/pose_landmarker/"
     "pose_landmarker_full/float16/1/pose_landmarker_full.task"
@@ -158,7 +157,7 @@ def create_landmarker():
     options = mp_vision.PoseLandmarkerOptions(
         base_options=base_options,
         running_mode=mp_vision.RunningMode.VIDEO,
-        num_poses=1, # Obligamos a la IA a enfocarse en un solo paciente (evita ruido)
+        num_poses=1, # Obligamos a la IA a enfocarse en un solo paciente
         min_pose_detection_confidence=0.6,
         min_pose_presence_confidence=0.6,
         min_tracking_confidence=0.6,
@@ -208,19 +207,14 @@ def analyze_frame(frame, landmarker, movement, side, timestamp_ms, smooth_buffer
             smooth_buffer.pop(0)
         smoothed = sum(smooth_buffer) / len(smooth_buffer)
         
-        # --- SOLUCIÓN VISUAL: DIBUJAR NÚMERO Y SÍMBOLO "°" GEOMÉTRICO ---
-        # 1. Obtenemos solo el número entero
+        # DIBUJAR NÚMERO Y SÍMBOLO "°" GEOMÉTRICO
         label_num = f"{smoothed:.0f}"
         text_org = (int(vertex[0]) + 12, int(vertex[1]) - 12)
         
-        # 2. Imprimimos el número
         cv2.putText(frame, label_num, text_org, cv2.FONT_HERSHEY_SIMPLEX, 0.9, color, 2, cv2.LINE_AA)
         
-        # 3. Calculamos dónde termina el número para dibujar el circulito "°" perfecto
         (tw, th), _ = cv2.getTextSize(label_num, cv2.FONT_HERSHEY_SIMPLEX, 0.9, 2)
         circle_org = (text_org[0] + tw + 6, text_org[1] - th + 4)
-        
-        # 4. Dibujamos el grado "°"
         cv2.circle(frame, circle_org, 4, color, 2, cv2.LINE_AA)
 
     return frame, smoothed, low_conf
@@ -436,7 +430,11 @@ def build_pdf_report(sessions):
         "corresponde a un screening funcional, no a una medicion clinica de referencia."
     )
 
-    return bytes(pdf.output())
+    # CORRECCIÓN DE PDF: Detector automático de versión para evitar TypeError o AttributeError
+    out = pdf.output(dest="S")
+    if isinstance(out, str):
+        return out.encode("latin-1")
+    return bytes(out)
 
 # ----------------------------------------------------------------------------
 # 5. Interfaz Streamlit
