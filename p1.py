@@ -22,9 +22,10 @@ from fpdf import FPDF
 from mediapipe.tasks import python as mp_python
 from mediapipe.tasks.python import vision as mp_vision
 
+import av
+
 # La grabación en vivo desde el navegador es opcional
 try:
-    import av
     from streamlit_webrtc import (
         RTCConfiguration,
         VideoProcessorBase,
@@ -35,10 +36,11 @@ try:
 except ImportError:
     WEBRTC_AVAILABLE = False
 
-# MediaPipe Pose Task Model - Versión Lite (optimizada para la nube y dispositivos móviles)
+# CORRECCIÓN DE FIDELIDAD: Pasamos del modelo "Lite" al modelo "Full"
+# Este modelo es mucho más robusto para distinguir piernas superpuestas o cruzadas.
 POSE_MODEL_URL = (
     "https://storage.googleapis.com/mediapipe-models/pose_landmarker/"
-    "pose_landmarker_lite/float16/1/pose_landmarker_lite.task"
+    "pose_landmarker_full/float16/1/pose_landmarker_full.task"
 )
 
 # Conexiones del esqueleto de 33 puntos (BlazePose)
@@ -107,7 +109,6 @@ def angle_between(a, b, c):
     cos_angle = np.clip(np.dot(v1, v2) / (mag1 * mag2), -1.0, 1.0)
     return float(np.degrees(np.arccos(cos_angle)))
 
-
 def angle_from_vertical(vertex, point):
     v = np.array([point[0] - vertex[0], point[1] - vertex[1]])
     mag = np.linalg.norm(v)
@@ -117,9 +118,7 @@ def angle_from_vertical(vertex, point):
     cos_angle = np.clip(np.dot(v, up) / mag, -1.0, 1.0)
     return float(np.degrees(np.arccos(cos_angle)))
 
-
 def angle_between_vectors(p1, p2, p3, p4):
-    """Ángulo entre el segmento de la pierna (p1->p2) y la planta del pie (p3->p4)."""
     v1 = np.array([p2[0] - p1[0], p2[1] - p1[1]])
     v2 = np.array([p4[0] - p3[0], p4[1] - p3[1]])
     mag1, mag2 = np.linalg.norm(v1), np.linalg.norm(v2)
@@ -127,7 +126,6 @@ def angle_between_vectors(p1, p2, p3, p4):
         return None
     cos_angle = np.clip(np.dot(v1, v2) / (mag1 * mag2), -1.0, 1.0)
     return float(np.degrees(np.arccos(cos_angle)))
-
 
 def pick_main_person(pose_landmarks_list):
     if len(pose_landmarks_list) <= 1:
@@ -141,7 +139,6 @@ def pick_main_person(pose_landmarks_list):
             best, best_area = lm, area
     return best
 
-
 # ----------------------------------------------------------------------------
 # 3. Procesamiento de video con MediaPipe Pose
 # ----------------------------------------------------------------------------
@@ -149,25 +146,24 @@ def pick_main_person(pose_landmarks_list):
 def download_model_if_needed():
     model_dir = os.path.join(tempfile.gettempdir(), "mediapipe_models")
     os.makedirs(model_dir, exist_ok=True)
-    model_path = os.path.join(model_dir, "pose_landmarker_lite.task")
+    model_path = os.path.join(model_dir, "pose_landmarker_full.task") # Usamos el modelo Full
     if not os.path.exists(model_path):
         urllib.request.urlretrieve(POSE_MODEL_URL, model_path)
     return model_path
 
-
 def create_landmarker():
     model_path = download_model_if_needed()
     base_options = mp_python.BaseOptions(model_asset_path=model_path)
+    
     options = mp_vision.PoseLandmarkerOptions(
         base_options=base_options,
         running_mode=mp_vision.RunningMode.VIDEO,
-        num_poses=3,
-        min_pose_detection_confidence=0.3,
-        min_pose_presence_confidence=0.3,
-        min_tracking_confidence=0.3,
+        num_poses=1, # Obligamos a la IA a enfocarse en un solo paciente (evita ruido)
+        min_pose_detection_confidence=0.6,
+        min_pose_presence_confidence=0.6,
+        min_tracking_confidence=0.6,
     )
     return mp_vision.PoseLandmarker.create_from_options(options)
-
 
 def analyze_frame(frame, landmarker, movement, side, timestamp_ms, smooth_buffer):
     rgb = cv2.cvtColor(frame, cv2.COLOR_BGR2RGB)
@@ -211,9 +207,21 @@ def analyze_frame(frame, landmarker, movement, side, timestamp_ms, smooth_buffer
         if len(smooth_buffer) > SMOOTH_WINDOW:
             smooth_buffer.pop(0)
         smoothed = sum(smooth_buffer) / len(smooth_buffer)
-        label = f"{smoothed:.0f} deg"
-        cv2.putText(frame, label, (int(vertex[0]) + 12, int(vertex[1]) - 12),
-                    cv2.FONT_HERSHEY_SIMPLEX, 0.9, color, 2, cv2.LINE_AA)
+        
+        # --- SOLUCIÓN VISUAL: DIBUJAR NÚMERO Y SÍMBOLO "°" GEOMÉTRICO ---
+        # 1. Obtenemos solo el número entero
+        label_num = f"{smoothed:.0f}"
+        text_org = (int(vertex[0]) + 12, int(vertex[1]) - 12)
+        
+        # 2. Imprimimos el número
+        cv2.putText(frame, label_num, text_org, cv2.FONT_HERSHEY_SIMPLEX, 0.9, color, 2, cv2.LINE_AA)
+        
+        # 3. Calculamos dónde termina el número para dibujar el circulito "°" perfecto
+        (tw, th), _ = cv2.getTextSize(label_num, cv2.FONT_HERSHEY_SIMPLEX, 0.9, 2)
+        circle_org = (text_org[0] + tw + 6, text_org[1] - th + 4)
+        
+        # 4. Dibujamos el grado "°"
+        cv2.circle(frame, circle_org, 4, color, 2, cv2.LINE_AA)
 
     return frame, smoothed, low_conf
 
@@ -234,7 +242,6 @@ if WEBRTC_AVAILABLE:
             if self.movement is not None:
                 if self.start_time is None:
                     self.start_time = time.time()
-                
                 current_ms = int(time.time() * 1000)
                 if current_ms <= self.last_ts:
                     current_ms = self.last_ts + 1
@@ -243,11 +250,9 @@ if WEBRTC_AVAILABLE:
                 img, angle, low_conf = analyze_frame(
                     img, self.landmarker, self.movement, self.side, current_ms, self.smooth_buffer
                 )
-                
                 if angle is not None:
                     t = time.time() - self.start_time
                     self.history.append((t, angle, low_conf))
-                    
             return av.VideoFrame.from_ndarray(img, format="bgr24")
 
 
@@ -258,46 +263,64 @@ def process_video(video_path, movement, side, target_fps, preview_placeholder, p
     total_frames = int(cap.get(cv2.CAP_PROP_FRAME_COUNT))
     frame_step = max(1, round(video_fps / target_fps))
 
+    orig_width = int(cap.get(cv2.CAP_PROP_FRAME_WIDTH))
+    orig_height = int(cap.get(cv2.CAP_PROP_FRAME_HEIGHT))
+    
+    max_dim = 640
+    scale = min(max_dim / orig_width, max_dim / orig_height)
+    new_width = int(orig_width * scale)
+    new_height = int(orig_height * scale)
+    new_width = new_width if new_width % 2 == 0 else new_width - 1
+    new_height = new_height if new_height % 2 == 0 else new_height - 1
+    
+    out_tfile = tempfile.NamedTemporaryFile(delete=False, suffix='.mp4')
+    output_video_path = out_tfile.name
+    
+    container = av.open(output_video_path, mode='w')
+    stream = container.add_stream('h264', rate=int(video_fps))
+    stream.width = new_width
+    stream.height = new_height
+    stream.pix_fmt = 'yuv420p'
+    stream.options = {'preset': 'ultrafast', 'tune': 'zerolatency', 'crf': '28'}
+
     history = []
     smooth_buffer = []
     frame_idx = 0
-    last_timestamp_ms = int(time.time() * 1000)
+
+    preview_placeholder.info("⏳ Procesando análisis cinemático...")
 
     while True:
         ret, frame = cap.read()
         if not ret:
             break
 
+        frame = cv2.resize(frame, (new_width, new_height))
+        current_ms = frame_idx * int(1000 / video_fps)
+
+        frame_analyzed, angle, low_conf = analyze_frame(
+            frame, landmarker, movement, side, current_ms, smooth_buffer
+        )
+        
         if frame_idx % frame_step == 0:
             t = frame_idx / video_fps
-            current_ms = int(time.time() * 1000)
-            if current_ms <= last_timestamp_ms:
-                current_ms = last_timestamp_ms + 1
-            last_timestamp_ms = current_ms
-
-            frame, angle, low_conf = analyze_frame(
-                frame, landmarker, movement, side, current_ms, smooth_buffer
-            )
-            
             if angle is not None:
                 history.append((t, angle, low_conf))
 
-            # Redimensión a 480px para aligerar la transferencia por red
-            height, width = frame.shape[:2]
-            scale = 480 / float(width)
-            dim = (480, int(height * scale))
-            preview_frame = cv2.resize(frame, dim, interpolation=cv2.INTER_AREA)
-            
-            # Mostramos el frame directamente en el contenedor
-            preview_placeholder.image(cv2.cvtColor(preview_frame, cv2.COLOR_BGR2RGB), channels="RGB")
+        av_frame = av.VideoFrame.from_ndarray(frame_analyzed, format='bgr24')
+        for packet in stream.encode(av_frame):
+            container.mux(packet)
 
-            if total_frames > 0:
-                progress_bar.progress(min(1.0, frame_idx / total_frames))
-                progress_text.caption(f"Analizando cuadro {frame_idx} de {total_frames}...")
+        if total_frames > 0 and frame_idx % 5 == 0:
+            progress_bar.progress(min(1.0, frame_idx / total_frames))
+            progress_text.caption(f"Analizando cuadro {frame_idx} de {total_frames}...")
                 
         frame_idx += 1
 
+    for packet in stream.encode():
+        container.mux(packet)
+    container.close()
     cap.release()
+    
     try:
         landmarker.close()
     except Exception:
@@ -305,6 +328,17 @@ def process_video(video_path, movement, side, target_fps, preview_placeholder, p
         
     progress_bar.progress(1.0)
     progress_text.empty()
+    preview_placeholder.empty()
+    
+    st.success("✅ Procesamiento completado:")
+    with open(output_video_path, 'rb') as f:
+        st.video(f.read())
+        
+    try:
+        os.remove(output_video_path)
+    except Exception:
+        pass
+
     return history
 
 
@@ -331,14 +365,12 @@ def make_chart(history, title):
     fig.tight_layout()
     return fig
 
-
 def fig_to_png_bytes(fig):
     buf = io.BytesIO()
     fig.savefig(buf, format="png", dpi=140)
     plt.close(fig)
     buf.seek(0)
     return buf.getvalue()
-
 
 def build_pdf_report(sessions):
     last = sessions[-1]
@@ -406,16 +438,11 @@ def build_pdf_report(sessions):
 
     return bytes(pdf.output())
 
-
 # ----------------------------------------------------------------------------
 # 5. Interfaz Streamlit
 # ----------------------------------------------------------------------------
 
-st.set_page_config(
-    page_title="M.M. - MotionMetrics",
-    page_icon="📐",
-    layout="centered"
-)
+st.set_page_config(page_title="M.M. - MotionMetrics", page_icon="📐", layout="centered")
 
 st.title("M.M. - MotionMetrics 📐")
 st.caption("Sube un video, elige la articulacion, el movimiento y la vista de camara.")
@@ -467,6 +494,10 @@ elif movement["mode"] == "vertical":
         "El angulo mide el antebrazo respecto a la vertical - es un proxy clinico."
     )
 
+# --- TIP CLÍNICO DE POSICIONAMIENTO PARA EVITAR OCLUSIÓN ---
+if camera_view == "lateral" and body_part in ["rodilla", "cadera", "tobillo"]:
+    st.info("💡 **Tip Clínico:** Ubica al paciente de modo que la pierna a evaluar esté **más cerca de la cámara**. Esto evita que la pierna de apoyo confunda el seguimiento de la IA.")
+
 target_fps = st.select_slider("Densidad de analisis", options=[5, 10, 15], value=10, format_func=lambda f: f"{f} cuadros/seg")
 
 st.header("2. Fuente del video")
@@ -495,8 +526,6 @@ if source == "Subir un video":
 
         if not history:
             st.error("No se detecto a la persona en el video. Revisa encuadre, luz e iluminacion.")
-        else:
-            st.success(f"Analisis completo - {len(history)} cuadros registrados.")
 
 else:
     st.header("3. Analisis")
@@ -573,9 +602,7 @@ if st.session_state.sessions:
         if st.button("Generar informe (PDF)"):
             pdf_bytes = build_pdf_report(st.session_state.sessions)
             last_patient = st.session_state.sessions[-1]["patient"]
-            
             safe_filename = last_patient.replace(' ', '_').replace('-', '_')
-            
             st.download_button("Descargar informe (PDF)", data=pdf_bytes, file_name=f"informe_{safe_filename}.pdf", mime="application/pdf")
     with col_xlsx:
         excel_buffer = io.BytesIO()
