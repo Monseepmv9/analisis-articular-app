@@ -85,7 +85,6 @@ MOVEMENTS = {
         {"id": "extension", "label": "Extensión", "view": "lateral", "mode": "angle3", "lm": {"left": [23, 25, 27], "right": [24, 26, 28]}},
     ],
     "tobillo": [
-        # Corrección: Estabilización de tobillo usando 3 puntos (Rodilla, Tobillo, Metatarso)
         {"id": "dorsiflexion", "label": "Dorsiflexión", "view": "lateral", "mode": "angle3", "lm": {"left": [25, 27, 31], "right": [26, 28, 32]}},
         {"id": "plantiflexion", "label": "Plantiflexión", "view": "lateral", "mode": "angle3", "lm": {"left": [25, 27, 31], "right": [26, 28, 32]}},
     ],
@@ -195,7 +194,7 @@ def analyze_frame(frame, landmarker, movement, side, timestamp_ms, smooth_buffer
         angle = angle_from_vertical(vertex, point)
     elif movement["mode"] == "angle4":
         p1, p2, p3, p4 = pts_px
-        vertex = p2  # El ángulo se dibuja a la altura del tobillo
+        vertex = p2
         angle = angle_between_vectors(p1, p2, p3, p4)
     else:
         a, b, c = pts_px
@@ -263,9 +262,6 @@ def process_video(video_path, movement, side, target_fps, preview_placeholder, p
     smooth_buffer = []
     frame_idx = 0
     last_timestamp_ms = int(time.time() * 1000)
-    
-    # Control de red: variable para no saturar la pantalla (Soluciona congelamiento)
-    last_ui_update = time.time() 
 
     while True:
         ret, frame = cap.read()
@@ -286,18 +282,18 @@ def process_video(video_path, movement, side, target_fps, preview_placeholder, p
             if angle is not None:
                 history.append((t, angle, low_conf))
 
-            # --- OPTIMIZACIÓN PARA COMPARTIR LINK ---
-            # Actualiza visualización cada 0.3 segundos sin detener el cálculo subyacente
-            current_time = time.time()
-            if current_time - last_ui_update > 0.3:
-                preview_frame = cv2.resize(frame, (0, 0), fx=0.5, fy=0.5)
-                preview_placeholder.image(cv2.cvtColor(preview_frame, cv2.COLOR_BGR2RGB),
-                                          channels="RGB", use_container_width=True)
-                last_ui_update = current_time
+            # Redimensión a 480px para aligerar la transferencia por red
+            height, width = frame.shape[:2]
+            scale = 480 / float(width)
+            dim = (480, int(height * scale))
+            preview_frame = cv2.resize(frame, dim, interpolation=cv2.INTER_AREA)
+            
+            # Mostramos el frame directamente en el contenedor
+            preview_placeholder.image(cv2.cvtColor(preview_frame, cv2.COLOR_BGR2RGB), channels="RGB")
 
             if total_frames > 0:
                 progress_bar.progress(min(1.0, frame_idx / total_frames))
-                progress_text.caption(f"Procesando cuadro {frame_idx} de {total_frames}...")
+                progress_text.caption(f"Analizando cuadro {frame_idx} de {total_frames}...")
                 
         frame_idx += 1
 
@@ -374,7 +370,6 @@ def build_pdf_report(sessions):
         titulo_limpio = s['joint'].replace("—", "-").replace("\u2014", "-")
         pdf.cell(0, 9, f"{titulo_limpio} - {s['date']}", ln=True)
 
-        # --- SOLUCIÓN PARA LA NUBE (Error FPDF imagen virtual) ---
         with tempfile.NamedTemporaryFile(delete=False, suffix=".png") as tmp_img:
             tmp_img.write(s["chart_png"])
             tmp_img_path = tmp_img.name
@@ -386,7 +381,6 @@ def build_pdf_report(sessions):
             os.remove(tmp_img_path)
         except Exception:
             pass
-        # -----------------------------
 
         pdf.set_font("Helvetica", "B", 10)
         pdf.set_fill_color(225, 245, 238)
