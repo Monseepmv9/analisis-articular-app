@@ -2,10 +2,11 @@
 M.M. - MotionMetrics
 =====================================================================
 Detecta la pose de una persona en un video (usando MediaPipe) y calcula
-el ángulo de la articulación y movimiento elegidos, cuadro a cuadro.
+el ángulo de la articulación y movimiento elegidos, con estandarización clínica AAOS.
 """
 
 import io
+import math
 import os
 import tempfile
 import time
@@ -36,13 +37,12 @@ try:
 except ImportError:
     WEBRTC_AVAILABLE = False
 
-# CORRECCIÓN DE FIDELIDAD: Pasamos del modelo "Lite" al modelo "Full"
+# Modelo "Full" para máxima precisión al cruzar o superponer extremidades
 POSE_MODEL_URL = (
     "https://storage.googleapis.com/mediapipe-models/pose_landmarker/"
     "pose_landmarker_full/float16/1/pose_landmarker_full.task"
 )
 
-# Conexiones del esqueleto de 33 puntos (BlazePose)
 POSE_CONNECTIONS = [
     (11, 12), (11, 13), (13, 15), (12, 14), (14, 16),
     (11, 23), (12, 24), (23, 24),
@@ -51,7 +51,7 @@ POSE_CONNECTIONS = [
 ]
 
 # ----------------------------------------------------------------------------
-# 1. Definición de articulaciones, movimientos y Rangos Normales (AAOS)
+# 1. Definición de Articulaciones, Movimientos y Rangos Normales (AAOS)
 # ----------------------------------------------------------------------------
 
 BODY_PART_LABELS = {
@@ -62,7 +62,6 @@ BODY_PART_LABELS = {
     "tobillo": "Tobillo",
 }
 
-# Rangos normativos extraídos del manual "Kine.learning" (AAOS)
 NORMATIVE_RANGES = {
     "hombro": {
         "flexion": (0, 180),
@@ -96,30 +95,30 @@ NORMATIVE_RANGES = {
 
 MOVEMENTS = {
     "hombro": [
-        {"id": "flexion", "label": "Flexión", "view": "lateral", "mode": "angle3", "lm": {"left": [23, 11, 13], "right": [24, 12, 14]}},
-        {"id": "extension", "label": "Extensión", "view": "lateral", "mode": "angle3", "lm": {"left": [23, 11, 13], "right": [24, 12, 14]}},
-        {"id": "abduccion", "label": "Abducción", "view": "frontal", "mode": "angle3", "lm": {"left": [23, 11, 13], "right": [24, 12, 14]}},
-        {"id": "aduccion", "label": "Aducción", "view": "frontal", "mode": "angle3", "lm": {"left": [23, 11, 13], "right": [24, 12, 14]}},
+        {"id": "flexion", "label": "Flexión", "view": "lateral", "mode": "angle_0_rest", "lm": {"left": [23, 11, 13], "right": [24, 12, 14]}},
+        {"id": "extension", "label": "Extensión", "view": "lateral", "mode": "angle_0_rest", "lm": {"left": [23, 11, 13], "right": [24, 12, 14]}},
+        {"id": "abduccion", "label": "Abducción", "view": "frontal", "mode": "angle_0_rest", "lm": {"left": [23, 11, 13], "right": [24, 12, 14]}},
+        {"id": "aduccion", "label": "Aducción", "view": "frontal", "mode": "angle_0_rest", "lm": {"left": [23, 11, 13], "right": [24, 12, 14]}},
         {"id": "rot_interna", "label": "Rotación interna", "view": "frontal", "mode": "vertical", "lm": {"left": [13, 15], "right": [14, 16]}},
         {"id": "rot_externa", "label": "Rotación externa", "view": "frontal", "mode": "vertical", "lm": {"left": [13, 15], "right": [14, 16]}},
     ],
     "codo": [
-        {"id": "flexion", "label": "Flexión", "view": "lateral", "mode": "angle3", "lm": {"left": [11, 13, 15], "right": [12, 14, 16]}},
-        {"id": "extension", "label": "Extensión", "view": "lateral", "mode": "angle3", "lm": {"left": [11, 13, 15], "right": [12, 14, 16]}},
+        {"id": "flexion", "label": "Flexión", "view": "lateral", "mode": "angle_180_rest", "lm": {"left": [11, 13, 15], "right": [12, 14, 16]}},
+        {"id": "extension", "label": "Extensión", "view": "lateral", "mode": "angle_180_rest", "lm": {"left": [11, 13, 15], "right": [12, 14, 16]}},
     ],
     "cadera": [
-        {"id": "flexion", "label": "Flexión", "view": "lateral", "mode": "angle3", "lm": {"left": [11, 23, 25], "right": [12, 24, 26]}},
-        {"id": "extension", "label": "Extensión", "view": "lateral", "mode": "angle3", "lm": {"left": [11, 23, 25], "right": [12, 24, 26]}},
-        {"id": "abduccion", "label": "Abducción", "view": "frontal", "mode": "angle3", "lm": {"left": [11, 23, 25], "right": [12, 24, 26]}},
-        {"id": "aduccion", "label": "Aducción", "view": "frontal", "mode": "angle3", "lm": {"left": [11, 23, 25], "right": [12, 24, 26]}},
+        {"id": "flexion", "label": "Flexión", "view": "lateral", "mode": "angle_180_rest", "lm": {"left": [11, 23, 25], "right": [12, 24, 26]}},
+        {"id": "extension", "label": "Extensión", "view": "lateral", "mode": "angle_180_rest", "lm": {"left": [11, 23, 25], "right": [12, 24, 26]}},
+        {"id": "abduccion", "label": "Abducción", "view": "frontal", "mode": "angle_90_rest", "lm": {"left": [24, 23, 25], "right": [23, 24, 26]}},
+        {"id": "aduccion", "label": "Aducción", "view": "frontal", "mode": "angle_90_rest", "lm": {"left": [24, 23, 25], "right": [23, 24, 26]}},
     ],
     "rodilla": [
-        {"id": "flexion", "label": "Flexión", "view": "lateral", "mode": "angle3", "lm": {"left": [23, 25, 27], "right": [24, 26, 28]}},
-        {"id": "extension", "label": "Extensión", "view": "lateral", "mode": "angle3", "lm": {"left": [23, 25, 27], "right": [24, 26, 28]}},
+        {"id": "flexion", "label": "Flexión", "view": "lateral", "mode": "angle_180_rest", "lm": {"left": [23, 25, 27], "right": [24, 26, 28]}},
+        {"id": "extension", "label": "Extensión", "view": "lateral", "mode": "angle_180_rest", "lm": {"left": [23, 25, 27], "right": [24, 26, 28]}},
     ],
     "tobillo": [
-        {"id": "dorsiflexion", "label": "Dorsiflexión", "view": "lateral", "mode": "angle3", "lm": {"left": [25, 27, 31], "right": [26, 28, 32]}},
-        {"id": "plantiflexion", "label": "Plantiflexión", "view": "lateral", "mode": "angle3", "lm": {"left": [25, 27, 31], "right": [26, 28, 32]}},
+        {"id": "dorsiflexion", "label": "Dorsiflexión", "view": "lateral", "mode": "angle_90_rest", "lm": {"left": [25, 27, 31], "right": [26, 28, 32]}},
+        {"id": "plantiflexion", "label": "Plantiflexión", "view": "lateral", "mode": "angle_90_rest", "lm": {"left": [25, 27, 31], "right": [26, 28, 32]}},
     ],
 }
 
@@ -128,7 +127,7 @@ SMOOTH_WINDOW = 3
 
 
 # ----------------------------------------------------------------------------
-# 2. Geometría: cálculo de ángulos
+# 2. Geometría: cálculo de ángulos y dibujado de arco
 # ----------------------------------------------------------------------------
 
 def angle_between(a, b, c):
@@ -149,14 +148,30 @@ def angle_from_vertical(vertex, point):
     cos_angle = np.clip(np.dot(v, up) / mag, -1.0, 1.0)
     return float(np.degrees(np.arccos(cos_angle)))
 
-def angle_between_vectors(p1, p2, p3, p4):
-    v1 = np.array([p2[0] - p1[0], p2[1] - p1[1]])
-    v2 = np.array([p4[0] - p3[0], p4[1] - p3[1]])
-    mag1, mag2 = np.linalg.norm(v1), np.linalg.norm(v2)
-    if mag1 == 0 or mag2 == 0:
-        return None
-    cos_angle = np.clip(np.dot(v1, v2) / (mag1 * mag2), -1.0, 1.0)
-    return float(np.degrees(np.arccos(cos_angle)))
+def draw_angle_arc(frame, p1, p2, p3, color, radius=35, thickness=2):
+    """
+    Dibuja un arco entre los dos segmentos que forman el ángulo.
+    p2 es el vértice. Se asegura de dibujar el ángulo interno (menor a 180).
+    """
+    angle1 = math.degrees(math.atan2(p1[1] - p2[1], p1[0] - p2[0]))
+    angle2 = math.degrees(math.atan2(p3[1] - p2[1], p3[0] - p2[0]))
+    
+    # Normalizamos a positivos
+    if angle1 < 0: angle1 += 360
+    if angle2 < 0: angle2 += 360
+    
+    # Encontramos la distancia más corta para dibujar siempre el ángulo interno
+    a_min = min(angle1, angle2)
+    a_max = max(angle1, angle2)
+    
+    if a_max - a_min > 180:
+        start_angle = a_max
+        end_angle = a_min + 360
+    else:
+        start_angle = a_min
+        end_angle = a_max
+        
+    cv2.ellipse(frame, (int(p2[0]), int(p2[1])), (radius, radius), 0, start_angle, end_angle, color, thickness)
 
 def pick_main_person(pose_landmarks_list):
     if len(pose_landmarks_list) <= 1:
@@ -219,16 +234,32 @@ def analyze_frame(frame, landmarker, movement, side, timestamp_ms, smooth_buffer
     if movement["mode"] == "vertical":
         vertex, point = pts_px
         angle = angle_from_vertical(vertex, point)
-    elif movement["mode"] == "angle4":
-        p1, p2, p3, p4 = pts_px
-        vertex = p2
-        angle = angle_between_vectors(p1, p2, p3, p4)
     else:
         a, b, c = pts_px
         vertex = b
-        angle = angle_between(a, b, c)
+        raw_angle = angle_between(a, b, c)
+        
+        if raw_angle is None:
+            angle = None
+        elif movement["mode"] == "angle_0_rest":
+            angle = raw_angle
+        elif movement["mode"] == "angle_180_rest":
+            angle = abs(180.0 - raw_angle)
+        elif movement["mode"] == "angle_90_rest":
+            angle = abs(raw_angle - 90.0) 
 
     color = (60, 70, 226) if low_conf else (35, 93, 242)
+    
+    # --- DIBUJADO DE LA AUREOLA DEL ÁNGULO ---
+    if angle is not None:
+        if movement["mode"] == "vertical":
+            # Para medir respecto a la vertical, creamos un punto imaginario hacia abajo
+            ref_pt = (vertex[0], vertex[1] + 50)
+            draw_angle_arc(frame, point, vertex, ref_pt, color)
+        else:
+            draw_angle_arc(frame, a, b, c, color)
+
+    # Dibujado de los nodos
     for p in pts_px:
         cv2.circle(frame, (int(p[0]), int(p[1])), 6, color, -1)
 
@@ -239,9 +270,8 @@ def analyze_frame(frame, landmarker, movement, side, timestamp_ms, smooth_buffer
             smooth_buffer.pop(0)
         smoothed = sum(smooth_buffer) / len(smooth_buffer)
         
-        # DIBUJAR NÚMERO Y SÍMBOLO "°" GEOMÉTRICO
         label_num = f"{smoothed:.0f}"
-        text_org = (int(vertex[0]) + 12, int(vertex[1]) - 12)
+        text_org = (int(vertex[0]) + 15, int(vertex[1]) - 15)
         
         cv2.putText(frame, label_num, text_org, cv2.FONT_HERSHEY_SIMPLEX, 0.9, color, 2, cv2.LINE_AA)
         
@@ -392,7 +422,7 @@ def make_chart(history, title, norm_range):
     ax.set_ylim(0, max_y)
     
     ax.set_xlabel("Tiempo (s)")
-    ax.set_ylabel("Angulo (°)")
+    ax.set_ylabel("Ángulo (°)") 
     ax.set_title(title, fontsize=11)
     ax.grid(alpha=0.3)
     fig.tight_layout()
@@ -449,15 +479,15 @@ def build_pdf_report(sessions):
 
         pdf.set_font("Helvetica", "B", 10)
         pdf.set_fill_color(225, 245, 238)
-        pdf.cell(45, 8, "Minimo", border=1, fill=True)
-        pdf.cell(45, 8, "Maximo", border=1, fill=True)
+        pdf.cell(45, 8, "Mínimo", border=1, fill=True)
+        pdf.cell(45, 8, "Máximo", border=1, fill=True)
         pdf.cell(45, 8, "Promedio", border=1, fill=True)
         pdf.cell(45, 8, "Rango Normal", border=1, fill=True, ln=True)
         
         pdf.set_font("Helvetica", "", 10)
-        pdf.cell(45, 8, f"{s['min']:.1f} grados", border=1)
-        pdf.cell(45, 8, f"{s['max']:.1f} grados", border=1)
-        pdf.cell(45, 8, f"{s['mean']:.1f} grados", border=1)
+        pdf.cell(45, 8, f"{s['min']:.1f}{chr(176)}", border=1)  
+        pdf.cell(45, 8, f"{s['max']:.1f}{chr(176)}", border=1)
+        pdf.cell(45, 8, f"{s['mean']:.1f}{chr(176)}", border=1)
         pdf.cell(45, 8, f"{s['norm_range_str']}", border=1, ln=True)
         pdf.ln(6)
 
@@ -472,7 +502,10 @@ def build_pdf_report(sessions):
         "Rangos de referencia basados en goniometria estandar (AAOS)."
     )
 
-    return pdf.output(dest="S").encode("latin-1")
+    out = pdf.output(dest="S")
+    if isinstance(out, str):
+        return out.encode("latin-1")
+    return bytes(out)
 
 # ----------------------------------------------------------------------------
 # 5. Interfaz Streamlit
@@ -547,10 +580,8 @@ progress_bar = st.progress(0.0)
 progress_text = st.empty()
 
 if source == "Subir un video":
-    # MENSAJE DE AYUDA PARA MÓVILES
     st.info("📱 **Si estás en un celular o tablet:** Al presionar el botón de abajo, tu dispositivo te dará la opción de abrir la cámara, grabar al paciente y subir el video automáticamente.")
     
-    # SE AGREGÓ "webm" PARA SOPORTE DE CÁMARA DE ANDROID
     uploaded_file = st.file_uploader("Sube un video o graba directamente con tu cámara", type=["mp4", "mov", "avi", "mkv", "webm"])
 
     st.header("3. Analisis")
@@ -610,13 +641,13 @@ if history:
     
     st.header("5. Resultados de la prueba")
     r1, r2, r3 = st.columns(3)
-    r1.metric("Minimo", f"{min(angles):.1f}°")
+    r1.metric("Mínimo", f"{min(angles):.1f}°") 
     
     if current_norm_range[0] <= max_angle <= current_norm_range[1] + 5: 
-        r2.metric("Maximo", f"{max_angle:.1f}°", "Dentro de rango", delta_color="normal")
+        r2.metric("Máximo", f"{max_angle:.1f}°", "Dentro de rango", delta_color="normal")
     else:
         diff = max_angle - current_norm_range[1]
-        r2.metric("Maximo", f"{max_angle:.1f}°", f"Diferencia: {diff:+.1f}°", delta_color="inverse")
+        r2.metric("Máximo", f"{max_angle:.1f}°", f"Diferencia: {diff:+.1f}°", delta_color="inverse")
         
     r3.metric("Promedio", f"{sum(angles) / len(angles):.1f}°")
 
@@ -644,7 +675,7 @@ if st.session_state.sessions:
     st.subheader("Historial guardado (esta sesion)")
     sessions_df = pd.DataFrame([{
         "RUN": s["run"], "Paciente": s["patient"], "Fecha": s["date"], "Articulacion": s["joint"],
-        "Minimo °": round(s["min"], 1), "Maximo °": round(s["max"], 1), "Rango Esperado": s["norm_range_str"]
+        "Mínimo °": round(s["min"], 1), "Máximo °": round(s["max"], 1), "Rango Esperado": s["norm_range_str"]
     } for s in st.session_state.sessions])
     st.dataframe(sessions_df, use_container_width=True)
 
