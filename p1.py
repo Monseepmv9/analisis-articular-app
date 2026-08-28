@@ -51,7 +51,7 @@ POSE_CONNECTIONS = [
 ]
 
 # ----------------------------------------------------------------------------
-# 1. Definición de articulaciones y movimientos
+# 1. Definición de articulaciones, movimientos y Rangos Normales (AAOS)
 # ----------------------------------------------------------------------------
 
 BODY_PART_LABELS = {
@@ -60,6 +60,38 @@ BODY_PART_LABELS = {
     "cadera": "Cadera",
     "rodilla": "Rodilla",
     "tobillo": "Tobillo",
+}
+
+# Rangos normativos extraídos del manual "Kine.learning" (AAOS)
+NORMATIVE_RANGES = {
+    "hombro": {
+        "flexion": (0, 180),
+        "extension": (0, 60), 
+        "abduccion": (0, 180),
+        "aduccion": (0, 30),
+        "rot_interna": (0, 70),
+        "rot_externa": (0, 90)
+    },
+    "codo": {
+        "flexion": (0, 150),
+        "extension": (0, 10) 
+    },
+    "cadera": {
+        "flexion": (0, 120), 
+        "extension": (0, 30), 
+        "abduccion": (0, 45), 
+        "aduccion": (0, 30), 
+        "rot_interna": (0, 45),
+        "rot_externa": (0, 45)
+    },
+    "rodilla": {
+        "flexion": (0, 135), 
+        "extension": (0, 10) 
+    },
+    "tobillo": {
+        "dorsiflexion": (0, 20),
+        "plantiflexion": (0, 50)
+    }
 }
 
 MOVEMENTS = {
@@ -145,7 +177,7 @@ def pick_main_person(pose_landmarks_list):
 def download_model_if_needed():
     model_dir = os.path.join(tempfile.gettempdir(), "mediapipe_models")
     os.makedirs(model_dir, exist_ok=True)
-    model_path = os.path.join(model_dir, "pose_landmarker_full.task") # Usamos el modelo Full
+    model_path = os.path.join(model_dir, "pose_landmarker_full.task")
     if not os.path.exists(model_path):
         urllib.request.urlretrieve(POSE_MODEL_URL, model_path)
     return model_path
@@ -157,7 +189,7 @@ def create_landmarker():
     options = mp_vision.PoseLandmarkerOptions(
         base_options=base_options,
         running_mode=mp_vision.RunningMode.VIDEO,
-        num_poses=1, # Obligamos a la IA a enfocarse en un solo paciente
+        num_poses=1,
         min_pose_detection_confidence=0.6,
         min_pose_presence_confidence=0.6,
         min_tracking_confidence=0.6,
@@ -340,20 +372,27 @@ def process_video(video_path, movement, side, target_fps, preview_placeholder, p
 # 4. Gráficos y reportes PDF
 # ----------------------------------------------------------------------------
 
-def make_chart(history, title):
+def make_chart(history, title, norm_range):
     times = [h[0] for h in history]
     angles = [h[1] for h in history]
     low_conf_pts = [(h[0], h[1]) for h in history if h[2]]
 
     fig, ax = plt.subplots(figsize=(7, 3))
+    
+    if norm_range:
+        ax.axhspan(norm_range[0], norm_range[1], color='green', alpha=0.1, label='Rango Normal Esperado')
+
     ax.plot(times, angles, color="#0f6e56", linewidth=2)
     if low_conf_pts:
         lx, ly = zip(*low_conf_pts)
         ax.scatter(lx, ly, color="#e24b4a", s=12, zorder=3, label="Baja confianza")
         ax.legend(loc="upper right", fontsize=8)
-    ax.set_ylim(0, 180)
+    
+    max_y = max(180, (norm_range[1] + 20) if norm_range else 180)
+    ax.set_ylim(0, max_y)
+    
     ax.set_xlabel("Tiempo (s)")
-    ax.set_ylabel("Angulo (grados)")
+    ax.set_ylabel("Angulo (°)")
     ax.set_title(title, fontsize=11)
     ax.grid(alpha=0.3)
     fig.tight_layout()
@@ -410,14 +449,16 @@ def build_pdf_report(sessions):
 
         pdf.set_font("Helvetica", "B", 10)
         pdf.set_fill_color(225, 245, 238)
-        pdf.cell(60, 8, "Minimo", border=1, fill=True)
-        pdf.cell(60, 8, "Maximo", border=1, fill=True)
-        pdf.cell(60, 8, "Promedio", border=1, fill=True, ln=True)
-        pdf.set_font("Helvetica", "", 10)
+        pdf.cell(45, 8, "Minimo", border=1, fill=True)
+        pdf.cell(45, 8, "Maximo", border=1, fill=True)
+        pdf.cell(45, 8, "Promedio", border=1, fill=True)
+        pdf.cell(45, 8, "Rango Normal", border=1, fill=True, ln=True)
         
-        pdf.cell(60, 8, f"{s['min']:.1f} grados", border=1)
-        pdf.cell(60, 8, f"{s['max']:.1f} grados", border=1)
-        pdf.cell(60, 8, f"{s['mean']:.1f} grados", border=1, ln=True)
+        pdf.set_font("Helvetica", "", 10)
+        pdf.cell(45, 8, f"{s['min']:.1f} grados", border=1)
+        pdf.cell(45, 8, f"{s['max']:.1f} grados", border=1)
+        pdf.cell(45, 8, f"{s['mean']:.1f} grados", border=1)
+        pdf.cell(45, 8, f"{s['norm_range_str']}", border=1, ln=True)
         pdf.ln(6)
 
     pdf.set_font("Helvetica", "I", 8)
@@ -427,10 +468,10 @@ def build_pdf_report(sessions):
         0, 4.5,
         "Informe generado por estimacion de video 2D (MediaPipe Pose). "
         "No equivale a la precision de un sistema de sensores inerciales; "
-        "corresponde a un screening funcional, no a una medicion clinica de referencia."
+        "corresponde a un screening funcional, no a una medicion clinica de referencia. "
+        "Rangos de referencia basados en goniometria estandar (AAOS)."
     )
 
-    # CORRECCIÓN DE PDF: Devuelve el archivo codificado para evitar el TypeError
     return pdf.output(dest="S").encode("latin-1")
 
 # ----------------------------------------------------------------------------
@@ -464,6 +505,7 @@ with col2:
         format_func=lambda mid: next(m["label"] for m in movement_options if m["id"] == mid),
     )
 movement = next(m for m in movement_options if m["id"] == movement_id)
+current_norm_range = NORMATIVE_RANGES[body_part][movement_id]
 
 col3, col4 = st.columns(2)
 with col3:
@@ -489,14 +531,15 @@ elif movement["mode"] == "vertical":
         "El angulo mide el antebrazo respecto a la vertical - es un proxy clinico."
     )
 
-# --- TIP CLÍNICO DE POSICIONAMIENTO PARA EVITAR OCLUSIÓN ---
 if camera_view == "lateral" and body_part in ["rodilla", "cadera", "tobillo"]:
     st.info("💡 **Tip Clínico:** Ubica al paciente de modo que la pierna a evaluar esté **más cerca de la cámara**. Esto evita que la pierna de apoyo confunda el seguimiento de la IA.")
+
+st.info(f"📊 **Rango normal esperado (AAOS):** {current_norm_range[0]}° - {current_norm_range[1]}°")
 
 target_fps = st.select_slider("Densidad de analisis", options=[5, 10, 15], value=10, format_func=lambda f: f"{f} cuadros/seg")
 
 st.header("2. Fuente del video")
-source_options = ["Subir un video"] + (["Grabar en vivo desde la camara"] if WEBRTC_AVAILABLE else [])
+source_options = ["Subir un video", "Grabar en vivo desde la camara"] if WEBRTC_AVAILABLE else ["Subir un video"]
 source = st.radio("Como quieres registrar la prueba?", source_options, horizontal=True)
 
 preview_placeholder = st.empty()
@@ -504,7 +547,11 @@ progress_bar = st.progress(0.0)
 progress_text = st.empty()
 
 if source == "Subir un video":
-    uploaded_file = st.file_uploader("Video de la prueba", type=["mp4", "mov", "avi", "mkv"])
+    # MENSAJE DE AYUDA PARA MÓVILES
+    st.info("📱 **Si estás en un celular o tablet:** Al presionar el botón de abajo, tu dispositivo te dará la opción de abrir la cámara, grabar al paciente y subir el video automáticamente.")
+    
+    # SE AGREGÓ "webm" PARA SOPORTE DE CÁMARA DE ANDROID
+    uploaded_file = st.file_uploader("Sube un video o graba directamente con tu cámara", type=["mp4", "mov", "avi", "mkv", "webm"])
 
     st.header("3. Analisis")
     analyze_disabled = uploaded_file is None or camera_view != movement["view"]
@@ -522,7 +569,7 @@ if source == "Subir un video":
         if not history:
             st.error("No se detecto a la persona en el video. Revisa encuadre, luz e iluminacion.")
 
-else:
+elif WEBRTC_AVAILABLE:
     st.header("3. Analisis")
     if camera_view != movement["view"]:
         st.warning("Ajusta la vista de camara arriba antes de grabar, o el angulo no va a tener sentido.")
@@ -554,15 +601,23 @@ if history:
     
     chart_title = f'{BODY_PART_LABELS[body_part]} - {movement["label"]} ({"izq." if side == "left" else "der."})'
     
-    fig = make_chart(history, chart_title)
+    fig = make_chart(history, chart_title, current_norm_range)
     st.pyplot(fig)
     st.caption("Puntos rojos = cuadros con baja confianza en la deteccion (posible oclusion).")
 
     angles = [h[1] for h in history]
+    max_angle = max(angles)
+    
     st.header("5. Resultados de la prueba")
     r1, r2, r3 = st.columns(3)
     r1.metric("Minimo", f"{min(angles):.1f}°")
-    r2.metric("Maximo", f"{max(angles):.1f}°")
+    
+    if current_norm_range[0] <= max_angle <= current_norm_range[1] + 5: 
+        r2.metric("Maximo", f"{max_angle:.1f}°", "Dentro de rango", delta_color="normal")
+    else:
+        diff = max_angle - current_norm_range[1]
+        r2.metric("Maximo", f"{max_angle:.1f}°", f"Diferencia: {diff:+.1f}°", delta_color="inverse")
+        
     r3.metric("Promedio", f"{sum(angles) / len(angles):.1f}°")
 
     st.header("6. Paciente y registro de sesiones")
@@ -580,7 +635,8 @@ if history:
             "min": min(angles),
             "max": max(angles),
             "mean": sum(angles) / len(angles),
-            "chart_png": fig_to_png_bytes(make_chart(history, chart_title)),
+            "norm_range_str": f"{current_norm_range[0]}°- {current_norm_range[1]}°",
+            "chart_png": fig_to_png_bytes(make_chart(history, chart_title, current_norm_range)),
         })
         st.success("Prueba guardada en el historial de esta sesion.")
 
@@ -588,7 +644,7 @@ if st.session_state.sessions:
     st.subheader("Historial guardado (esta sesion)")
     sessions_df = pd.DataFrame([{
         "RUN": s["run"], "Paciente": s["patient"], "Fecha": s["date"], "Articulacion": s["joint"],
-        "Minimo °": round(s["min"], 1), "Maximo °": round(s["max"], 1), "Promedio °": round(s["mean"], 1)
+        "Minimo °": round(s["min"], 1), "Maximo °": round(s["max"], 1), "Rango Esperado": s["norm_range_str"]
     } for s in st.session_state.sessions])
     st.dataframe(sessions_df, use_container_width=True)
 
