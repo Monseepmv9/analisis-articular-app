@@ -6,7 +6,6 @@ el ángulo de la articulación y movimiento elegidos, con estandarización clín
 """
 
 import io
-import math
 import os
 import tempfile
 import time
@@ -127,7 +126,7 @@ SMOOTH_WINDOW = 3
 
 
 # ----------------------------------------------------------------------------
-# 2. Geometría: cálculo de ángulos y dibujado de arco
+# 2. Geometría: cálculo de ángulos
 # ----------------------------------------------------------------------------
 
 def angle_between(a, b, c):
@@ -147,31 +146,6 @@ def angle_from_vertical(vertex, point):
     up = np.array([0, -1])
     cos_angle = np.clip(np.dot(v, up) / mag, -1.0, 1.0)
     return float(np.degrees(np.arccos(cos_angle)))
-
-def draw_angle_arc(frame, p1, p2, p3, color, radius=35, thickness=2):
-    """
-    Dibuja un arco entre los dos segmentos que forman el ángulo.
-    p2 es el vértice. Se asegura de dibujar el ángulo interno (menor a 180).
-    """
-    angle1 = math.degrees(math.atan2(p1[1] - p2[1], p1[0] - p2[0]))
-    angle2 = math.degrees(math.atan2(p3[1] - p2[1], p3[0] - p2[0]))
-    
-    # Normalizamos a positivos
-    if angle1 < 0: angle1 += 360
-    if angle2 < 0: angle2 += 360
-    
-    # Encontramos la distancia más corta para dibujar siempre el ángulo interno
-    a_min = min(angle1, angle2)
-    a_max = max(angle1, angle2)
-    
-    if a_max - a_min > 180:
-        start_angle = a_max
-        end_angle = a_min + 360
-    else:
-        start_angle = a_min
-        end_angle = a_max
-        
-    cv2.ellipse(frame, (int(p2[0]), int(p2[1])), (radius, radius), 0, start_angle, end_angle, color, thickness)
 
 def pick_main_person(pose_landmarks_list):
     if len(pose_landmarks_list) <= 1:
@@ -249,17 +223,6 @@ def analyze_frame(frame, landmarker, movement, side, timestamp_ms, smooth_buffer
             angle = abs(raw_angle - 90.0) 
 
     color = (60, 70, 226) if low_conf else (35, 93, 242)
-    
-    # --- DIBUJADO DE LA AUREOLA DEL ÁNGULO ---
-    if angle is not None:
-        if movement["mode"] == "vertical":
-            # Para medir respecto a la vertical, creamos un punto imaginario hacia abajo
-            ref_pt = (vertex[0], vertex[1] + 50)
-            draw_angle_arc(frame, point, vertex, ref_pt, color)
-        else:
-            draw_angle_arc(frame, a, b, c, color)
-
-    # Dibujado de los nodos
     for p in pts_px:
         cv2.circle(frame, (int(p[0]), int(p[1])), 6, color, -1)
 
@@ -271,7 +234,7 @@ def analyze_frame(frame, landmarker, movement, side, timestamp_ms, smooth_buffer
         smoothed = sum(smooth_buffer) / len(smooth_buffer)
         
         label_num = f"{smoothed:.0f}"
-        text_org = (int(vertex[0]) + 15, int(vertex[1]) - 15)
+        text_org = (int(vertex[0]) + 12, int(vertex[1]) - 12)
         
         cv2.putText(frame, label_num, text_org, cv2.FONT_HERSHEY_SIMPLEX, 0.9, color, 2, cv2.LINE_AA)
         
