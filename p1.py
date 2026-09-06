@@ -24,6 +24,7 @@ import streamlit as st
 from fpdf import FPDF
 from mediapipe.tasks import python as mp_python
 from mediapipe.tasks.python import vision as mp_vision
+import av
 
 # ----------------------------------------------------------------------------
 # 1. Configuración de Modelos y Datos Clínicos
@@ -237,6 +238,19 @@ def process_video_multijoint(video_path, configs, target_fps, preview_placeholde
     total_frames = end_frame - start_frame
     cap.set(cv2.CAP_PROP_POS_FRAMES, start_frame)
 
+    orig_w, orig_h = int(cap.get(cv2.CAP_PROP_FRAME_WIDTH)), int(cap.get(cv2.CAP_PROP_FRAME_HEIGHT))
+    scale_vid = min(640 / orig_w, 640 / orig_h)
+    new_w, new_h = int(orig_w * scale_vid), int(orig_h * scale_vid)
+    new_w, new_h = new_w - (new_w % 2), new_h - (new_h % 2)
+
+    out_tfile = tempfile.NamedTemporaryFile(delete=False, suffix='.mp4')
+    output_video_path = out_tfile.name
+
+    container = av.open(output_video_path, mode='w')
+    stream = container.add_stream('h264', rate=int(video_fps))
+    stream.width, stream.height, stream.pix_fmt = new_w, new_h, 'yuv420p'
+    stream.options = {'preset': 'ultrafast', 'tune': 'zerolatency', 'crf': '28'}
+
     history = []
     frames_processed = 0
     preview_placeholder.info("⏳ Procesando análisis cinemático...")
@@ -259,21 +273,34 @@ def process_video_multijoint(video_path, configs, target_fps, preview_placeholde
             preview_frame = cv2.resize(frame_analyzed, dim, interpolation=cv2.INTER_AREA)
             preview_placeholder.image(cv2.cvtColor(preview_frame, cv2.COLOR_BGR2RGB), channels="RGB", use_container_width=True)
 
+        frame_to_write = cv2.resize(frame_analyzed, (new_w, new_h))
+        av_frame = av.VideoFrame.from_ndarray(frame_to_write, format='bgr24')
+        for packet in stream.encode(av_frame):
+            container.mux(packet)
+
         if total_frames > 0 and frames_processed % 5 == 0:
             progress_bar.progress(min(1.0, frames_processed / total_frames))
             progress_text.caption(f"Analizando segundo {frames_processed/video_fps:.1f} de {(total_frames)/video_fps:.1f}...")
                 
         frames_processed += 1
 
+    for packet in stream.encode(): container.mux(packet)
+    container.close()
     cap.release()
     try: landmarker.close()
     except Exception: pass
         
+    with open(output_video_path, 'rb') as f:
+        video_bytes = f.read()
+    try: os.remove(output_video_path)
+    except Exception: pass
+
     progress_bar.empty()
     progress_text.empty()
+    preview_placeholder.empty()
     st.success("✅ Procesamiento completado.")
 
-    return history
+    return history, video_bytes
 
 
 # ----------------------------------------------------------------------------
@@ -350,7 +377,6 @@ def build_pdf_report(sessions):
         pdf.cell(60, 8, f"{s['vel']} °/s", border=1, ln=True)
         pdf.ln(4)
 
-        # AGREGADO DE DIAGNÓSTICO Y OBSERVACIONES AL PDF
         if s.get("diagnostico"):
             pdf.set_font("Helvetica", "B", 10)
             pdf.set_text_color(28, 43, 48)
@@ -386,7 +412,7 @@ with col2:
     mov_opts1 = MOVEMENTS.get(bp1, [])
     mov_id1 = st.selectbox("Movimiento 1", [m["id"] for m in mov_opts1], format_func=lambda mid: next(m["label"] for m in mov_opts1 if m["id"] == mid))
 
-st.header("2. Configuración Secundaria ")
+st.header("2. Configuración Secundaria (Simultánea)")
 col3, col4 = st.columns(2)
 with col3:
     bp2 = st.selectbox("Articulación Secundaria", ["Ninguna"] + list(BODY_PART_LABELS.keys()), index=0)
@@ -438,8 +464,9 @@ if uploaded_file is not None:
             colors_hex.append("#32cd32")
 
         with st.spinner("Procesando cinemática y velocidad angular..."):
-            history = process_video_multijoint(tmp_path, configs, target_fps, preview_placeholder, progress_bar, progress_text, start_sec, end_sec)
+            history, video_bytes = process_video_multijoint(tmp_path, configs, target_fps, preview_placeholder, progress_bar, progress_text, start_sec, end_sec)
             st.session_state.history = history
+            st.session_state.video_bytes = video_bytes
             st.session_state.titles = titles
             st.session_state.norm_ranges = norm_ranges
             st.session_state.colors_hex = colors_hex
@@ -452,6 +479,15 @@ if st.session_state.history:
     titles = st.session_state.titles
     norm_ranges = st.session_state.norm_ranges
     colors_hex = st.session_state.colors_hex
+
+    if "video_bytes" in st.session_state:
+        st.video(st.session_state.video_bytes)
+        st.download_button(
+            label="📥 Descargar Video Analizado (con ángulos)",
+            data=st.session_state.video_bytes,
+            file_name=f"analisis_cinematico_{date.today().isoformat()}.mp4",
+            mime="video/mp4"
+        )
 
     st.header("4. Evolución Temporal Coordinada")
     fig = make_multijoint_chart(history, titles, norm_ranges, colors_hex)
@@ -489,7 +525,6 @@ if st.session_state.history:
     patient_run = p2.text_input("RUN", placeholder="12.345.678-9")
     test_date = p3.date_input("Fecha", value=date.today())
     
-    # NUEVOS CAMPOS: DIAGNÓSTICO Y OBSERVACIONES
     diagnostico = st.text_input("Impresión Diagnóstica (Opcional)", placeholder="Ej: Limitación funcional leve por probable tendinopatía...")
     observaciones = st.text_area("Observaciones Clínicas", placeholder="Ej: Paciente refiere dolor en los últimos 15° de flexión. Se observan compensaciones musculares...")
 
@@ -509,7 +544,6 @@ if st.session_state.history:
 
 if st.session_state.sessions:
     st.subheader("Historial (Se borrará al recargar la página)")
-    # Se actualiza el DataFrame para incluir Diagnóstico y Observaciones en el Excel
     sessions_df = pd.DataFrame([{
         "Paciente": s["patient"], 
         "Fecha": s["date"], 
