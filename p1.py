@@ -40,17 +40,15 @@ POSE_CONNECTIONS = [
 BODY_PART_LABELS = {
     "hombro": "Hombro",
     "codo": "Codo",
-    "muneca": "Muñeca",
     "cadera": "Cadera",
     "rodilla": "Rodilla",
     "tobillo": "Tobillo",
 }
 
 NORMATIVE_RANGES = {
-    "hombro": {"flexion": (0, 180), "extension": (0, 60), "abduccion": (0, 180), "aduccion": (0, 30), "rot_interna": (0, 70), "rot_externa": (0, 90)},
+    "hombro": {"flexion": (0, 180), "extension": (0, 60), "abduccion": (0, 180), "aduccion": (0, 30)},
     "codo": {"flexion": (0, 150), "extension": (0, 10)},
-    "muneca": {"flexion": (0, 80), "extension": (0, 70), "desviacion_radial": (0, 20), "desviacion_ulnar": (0, 30)},
-    "cadera": {"flexion": (0, 120), "extension": (0, 30), "abduccion": (0, 45), "aduccion": (0, 30), "rot_interna": (0, 45), "rot_externa": (0, 45)},
+    "cadera": {"flexion": (0, 120), "extension": (0, 30), "abduccion": (0, 45), "aduccion": (0, 30)},
     "rodilla": {"flexion": (0, 135), "extension": (0, 10)},
     "tobillo": {"dorsiflexion": (0, 20), "plantiflexion": (0, 50)},
 }
@@ -61,26 +59,16 @@ MOVEMENTS = {
         {"id": "extension", "label": "Extensión", "view": "lateral", "mode": "angle_0_rest", "lm": {"left": [23, 11, 13], "right": [24, 12, 14]}},
         {"id": "abduccion", "label": "Abducción", "view": "frontal", "mode": "angle_0_rest", "lm": {"left": [23, 11, 13], "right": [24, 12, 14]}},
         {"id": "aduccion", "label": "Aducción", "view": "frontal", "mode": "angle_0_rest", "lm": {"left": [23, 11, 13], "right": [24, 12, 14]}},
-        {"id": "rot_interna", "label": "Rotación interna", "view": "frontal", "mode": "vertical", "lm": {"left": [13, 15], "right": [14, 16]}},
-        {"id": "rot_externa", "label": "Rotación externa", "view": "frontal", "mode": "vertical", "lm": {"left": [13, 15], "right": [14, 16]}},
     ],
     "codo": [
         {"id": "flexion", "label": "Flexión", "view": "lateral", "mode": "angle_180_rest", "lm": {"left": [11, 13, 15], "right": [12, 14, 16]}},
         {"id": "extension", "label": "Extensión", "view": "lateral", "mode": "angle_180_rest", "lm": {"left": [11, 13, 15], "right": [12, 14, 16]}},
-    ],
-    "muneca": [
-        {"id": "flexion", "label": "Flexión", "view": "lateral", "mode": "angle_180_rest", "lm": {"left": [13, 15, 19], "right": [14, 16, 20]}},
-        {"id": "extension", "label": "Extensión", "view": "lateral", "mode": "angle_180_rest", "lm": {"left": [13, 15, 19], "right": [14, 16, 20]}},
-        {"id": "desviacion_radial", "label": "Desviación Radial", "view": "frontal", "mode": "angle_180_rest", "lm": {"left": [13, 15, 19], "right": [14, 16, 20]}},
-        {"id": "desviacion_ulnar", "label": "Desviación Ulnar", "view": "frontal", "mode": "angle_180_rest", "lm": {"left": [13, 15, 19], "right": [14, 16, 20]}},
     ],
     "cadera": [
         {"id": "flexion", "label": "Flexión", "view": "lateral", "mode": "angle_180_rest", "lm": {"left": [11, 23, 25], "right": [12, 24, 26]}},
         {"id": "extension", "label": "Extensión", "view": "lateral", "mode": "angle_180_rest", "lm": {"left": [11, 23, 25], "right": [12, 24, 26]}},
         {"id": "abduccion", "label": "Abducción", "view": "frontal", "mode": "angle_180_rest", "lm": {"left": [11, 23, 25], "right": [12, 24, 26]}},
         {"id": "aduccion", "label": "Aducción", "view": "frontal", "mode": "angle_180_rest", "lm": {"left": [11, 23, 25], "right": [12, 24, 26]}},
-        {"id": "rot_interna", "label": "Rotación interna", "view": "frontal", "mode": "vertical", "lm": {"left": [25, 27], "right": [26, 28]}},
-        {"id": "rot_externa", "label": "Rotación externa", "view": "frontal", "mode": "vertical", "lm": {"left": [25, 27], "right": [26, 28]}},
     ],
     "rodilla": [
         {"id": "flexion", "label": "Flexión", "view": "lateral", "mode": "angle_180_rest", "lm": {"left": [23, 25, 27], "right": [24, 26, 28]}},
@@ -92,14 +80,11 @@ MOVEMENTS = {
     ],
 }
 
-# Protocolo predefinido: todos los movimientos de tren superior
+# Protocolo predefinido: movimientos de hombro y codo (medibles de forma confiable en 2D)
 UPPER_LIMB_PROTOCOL = [
     ("hombro", "flexion"), ("hombro", "extension"),
     ("hombro", "abduccion"), ("hombro", "aduccion"),
-    ("hombro", "rot_interna"), ("hombro", "rot_externa"),
     ("codo", "flexion"), ("codo", "extension"),
-    ("muneca", "flexion"), ("muneca", "extension"),
-    ("muneca", "desviacion_radial"), ("muneca", "desviacion_ulnar"),
 ]
 
 # --- Parámetros ajustables (candidatos a optimizar en la fase piloto) ---
@@ -122,6 +107,11 @@ VIEW_FRONTAL_MIN = 0.60   # ancho de hombros / largo de tronco: >= esto => vista
 VIEW_LATERAL_MAX = 0.30   # <= esto => vista lateral (entre ambos = oblicua, se descarta)
 DIR_TOL = 3.0             # grados de tolerancia al decidir la dirección del movimiento
 FACING_WINDOW = 15        # frames usados para estabilizar hacia dónde mira el paciente
+
+# --- Privacidad: difuminado de rostro ---
+FACE_LM_IDX = list(range(0, 11))  # nariz, ojos, orejas y boca (MediaPipe Pose 0-10)
+FACE_BLUR_MARGIN = 1.7     # margen extra alrededor de los puntos faciales detectados
+FACE_BLUR_MIN_RADIUS = 18  # radio mínimo en píxeles, para que no desaparezca si la cara es chica
 
 SEGMENT_PALETTE = [
     "#1e78ff", "#32cd32", "#ff8c00", "#c71585", "#8a2be2", "#008b8b",
@@ -219,6 +209,37 @@ def draw_angle_arc(frame, p1, p2, p3, color, radius=35, thickness=2, scale=1.0):
     cv2.ellipse(frame, (int(p2[0]), int(p2[1])), (radius, radius), 0, start_angle, end_angle, color, thickness)
 
 
+def blur_face_region(frame, lm, w, h):
+    """
+    Difumina de forma irreversible la región facial (ojos, nariz, orejas, boca)
+    para proteger la identidad del paciente en el video de salida.
+    Usa el ancho de hombros como referencia de escala, más estable que la
+    distancia entre ojos cuando el paciente mira de perfil.
+    """
+    xs = [lm[i].x * w for i in FACE_LM_IDX]
+    ys = [lm[i].y * h for i in FACE_LM_IDX]
+    cx, cy = (min(xs) + max(xs)) / 2, (min(ys) + max(ys)) / 2
+    shoulder_w = math.hypot((lm[11].x - lm[12].x) * w, (lm[11].y - lm[12].y) * h)
+    face_span = max(max(xs) - min(xs), max(ys) - min(ys))
+    radius = max(FACE_BLUR_MIN_RADIUS, shoulder_w * 0.5, face_span * FACE_BLUR_MARGIN)
+
+    x0, y0 = max(0, int(cx - radius)), max(0, int(cy - radius))
+    x1, y1 = min(w, int(cx + radius)), min(h, int(cy + radius))
+    if x1 - x0 < 4 or y1 - y0 < 4:
+        return
+
+    roi = frame[y0:y1, x0:x1]
+    k = int(min(roi.shape[:2]) / 1.8)
+    k = max(15, k + (1 - k % 2))  # impar y con un mínimo razonable
+    blurred = cv2.GaussianBlur(roi, (k, k), 0)
+
+    mask = np.zeros(roi.shape[:2], dtype=np.uint8)
+    rh, rw = roi.shape[:2]
+    cv2.ellipse(mask, (rw // 2, rh // 2), (rw // 2, rh // 2), 0, 0, 360, 255, -1)
+    mask3 = cv2.merge([mask, mask, mask])
+    frame[y0:y1, x0:x1] = np.where(mask3 > 0, blurred, roi)
+
+
 def pick_main_person(pose_landmarks_list):
     if len(pose_landmarks_list) <= 1:
         return pose_landmarks_list[0] if pose_landmarks_list else None
@@ -277,7 +298,7 @@ def create_landmarker():
     return mp_vision.PoseLandmarker.create_from_options(options)
 
 
-def analyze_frame_segments(frame, landmarker, active_segments, timestamp_ms):
+def analyze_frame_segments(frame, landmarker, active_segments, timestamp_ms, blur_face=True):
     """
     Analiza un frame para los tramos activos en ese instante.
     Devuelve (frame_dibujado, {idx_tramo: ángulo suavizado o None}).
@@ -294,6 +315,9 @@ def analyze_frame_segments(frame, landmarker, active_segments, timestamp_ms):
     h, w = frame.shape[:2]
     sc = draw_scale(frame)
     lm = pick_main_person(result.pose_landmarks)
+
+    if blur_face:
+        blur_face_region(frame, lm, w, h)
 
     p_shoulder_l, p_shoulder_r = lm[11], lm[12]
     dx, dy = (p_shoulder_r.x - p_shoulder_l.x) * w, (p_shoulder_r.y - p_shoulder_l.y) * h
@@ -351,7 +375,7 @@ def analyze_frame_segments(frame, landmarker, active_segments, timestamp_ms):
     return frame, angles_out
 
 
-def process_video_protocol(video_path, segments, target_fps, preview_placeholder):
+def process_video_protocol(video_path, segments, target_fps, preview_placeholder, blur_face=True):
     """
     Procesa el video UNA sola vez. Cada tramo acumula su propia serie
     [(t, ángulo)] únicamente con frames válidos dentro de su ventana.
@@ -401,7 +425,7 @@ def process_video_protocol(video_path, segments, target_fps, preview_placeholder
         active = [s for s in segments if s["start"] <= t_now <= s["end"]]
 
         if active:
-            frame, angles = analyze_frame_segments(frame, landmarker, active, current_ms)
+            frame, angles = analyze_frame_segments(frame, landmarker, active, current_ms, blur_face=blur_face)
             if frames_processed % frame_step == 0:
                 for seg in active:
                     seg["sampled"] += 1
@@ -524,8 +548,9 @@ def parse_protocol(df, duration):
 # ----------------------------------------------------------------------------
 # Movimientos que se pueden separar automáticamente usando el signo del ángulo.
 # (articulación, movimiento) -> (vista requerida, dirección +1 / -1)
-# Muñeca y rotaciones NO están: dependen de la orientación de la palma / posición
-# 90-90 y se evalúan en el modo "por tramos".
+# Muñeca y rotaciones de hombro/cadera no están disponibles: son difíciles de
+# medir de forma confiable con un solo video 2D (dependen de la orientación de
+# la palma o de posiciones 90-90 que no se pueden validar bien con una cámara).
 AUTO_MOVEMENTS = {
     ("hombro", "flexion"): ("lateral", +1), ("hombro", "extension"): ("lateral", -1),
     ("hombro", "abduccion"): ("frontal", +1), ("hombro", "aduccion"): ("frontal", -1),
@@ -643,7 +668,7 @@ def build_auto_groups(selection, sides):
     return groups
 
 
-def analyze_frame_auto(frame, landmarker, groups, timestamp_ms, view_mode, state):
+def analyze_frame_auto(frame, landmarker, groups, timestamp_ms, view_mode, state, blur_face=True):
     """Devuelve (frame dibujado, {gid: ángulo con signo suavizado o None})."""
     rgb = cv2.cvtColor(frame, cv2.COLOR_BGR2RGB)
     mp_image = mp.Image(image_format=mp.ImageFormat.SRGB, data=rgb)
@@ -656,6 +681,9 @@ def analyze_frame_auto(frame, landmarker, groups, timestamp_ms, view_mode, state
     h, w = frame.shape[:2]
     sc = draw_scale(frame)
     lm = pick_main_person(result.pose_landmarks)
+
+    if blur_face:
+        blur_face_region(frame, lm, w, h)
 
     dx, dy = (lm[12].x - lm[11].x) * w, (lm[12].y - lm[11].y) * h
     tilt_angle = abs(math.degrees(math.atan2(dy, dx)))
@@ -707,7 +735,7 @@ def analyze_frame_auto(frame, landmarker, groups, timestamp_ms, view_mode, state
     return frame, record
 
 
-def process_video_auto(video_path, groups, target_fps, preview_placeholder, start_sec, end_sec, view_mode):
+def process_video_auto(video_path, groups, target_fps, preview_placeholder, start_sec, end_sec, view_mode, blur_face=True):
     landmarker = create_landmarker()
     cap = cv2.VideoCapture(video_path)
 
@@ -743,7 +771,7 @@ def process_video_auto(video_path, groups, target_fps, preview_placeholder, star
             break
 
         t_now = (start_frame + frames_processed) / video_fps
-        frame, record = analyze_frame_auto(frame, landmarker, groups, int(t_now * 1000), view_mode, state)
+        frame, record = analyze_frame_auto(frame, landmarker, groups, int(t_now * 1000), view_mode, state, blur_face=blur_face)
 
         if frames_processed % frame_step == 0:
             for g in groups:
@@ -960,16 +988,14 @@ st.set_page_config(page_title="M.M. - MotionMetrics", page_icon="📐", layout="
 st.title("M.M. - MotionMetrics 📐")
 st.caption("Análisis cinemático, goniometría 2D y velocidad angular. Varios movimientos en un solo video.")
 
-for key, default in [("sessions", []), ("results", []), ("editor_version", 0), ("protocol_df", None), ("file_id", None)]:
-    if key not in st.session_state:
-        st.session_state[key] = default
-
 MODE_AUTO = "Automático: elijo qué evaluar"
 MODE_SEGMENTS = "Por tramos: defino los tiempos"
+MODE_MULTI = "Varios videos: un movimiento por video"
 VIEW_MODES = {"Detectar automáticamente": "auto", "Siempre lateral (de perfil)": "lateral", "Siempre frontal (de frente)": "frontal"}
+COL_FILE = "Archivo"
 
 
-def store_results(results, video_bytes):
+def store_results(results, video_bytes=None, multi_videos=None):
     if all(r["valid"] == 0 for r in results):
         st.session_state.results = []
         st.error(
@@ -979,172 +1005,290 @@ def store_results(results, video_bytes):
     else:
         st.success("✅ Procesamiento completado.")
         st.session_state.results = results
-        st.session_state.video_bytes = video_bytes
+        st.session_state.pop("video_bytes", None)
+        st.session_state.pop("multi_videos", None)
+        if video_bytes is not None:
+            st.session_state.video_bytes = video_bytes
+        if multi_videos is not None:
+            st.session_state.multi_videos = multi_videos
 
 
-st.header("1. Video")
+for key, default in [("sessions", []), ("results", []), ("editor_version", 0), ("protocol_df", None), ("file_id", None)]:
+    if key not in st.session_state:
+        st.session_state[key] = default
+
+st.header("1. Privacidad y modo de evaluación")
+blur_face = st.checkbox(
+    "Difuminar el rostro del paciente en el video de salida", value=True,
+    help="Difumina ojos, nariz, orejas y boca en todos los videos generados por la app.",
+)
+if not blur_face:
+    st.warning(
+        "El rostro del paciente quedará visible en el video de salida y en cualquier reporte o "
+        "descarga que lo incluya. Actívalo salvo que tengas una razón clínica específica para no hacerlo."
+    )
+
+mode = st.radio("¿Cómo grabaste al paciente?", [MODE_AUTO, MODE_SEGMENTS, MODE_MULTI])
+if mode == MODE_MULTI:
+    st.caption("Un video distinto por cada movimiento (por ejemplo, grabaste cada movimiento por separado).")
+else:
+    st.caption("Un solo video con uno o varios movimientos consecutivos.")
+
 target_fps = st.select_slider("Frecuencia de muestreo (FPS)", options=[10, 15, 30], value=30)
-uploaded_file = st.file_uploader("Sube el video del paciente", type=["mp4", "mov", "avi"])
 preview_placeholder = st.empty()
 
-if uploaded_file is not None:
-    file_id = f"{uploaded_file.name}-{uploaded_file.size}"
+# ======================================================================
+# MODO VARIOS VIDEOS: un movimiento por archivo
+# ======================================================================
+if mode == MODE_MULTI:
+    st.header("2. Videos")
+    multi_files = st.file_uploader(
+        "Sube uno o más videos (cada uno con un solo movimiento)",
+        type=["mp4", "mov", "avi"], accept_multiple_files=True,
+    )
 
-    # Solo se escribe/lee el video cuando cambia el archivo (no en cada rerun)
-    if st.session_state.file_id != file_id:
-        old_path = st.session_state.get("tmp_path")
-        if old_path:
-            try:
-                os.remove(old_path)
-            except Exception:
-                pass
-        with tempfile.NamedTemporaryFile(delete=False, suffix=".mp4") as tmp:
-            tmp.write(uploaded_file.getvalue())
-            st.session_state.tmp_path = tmp.name
-
-        cap_temp = cv2.VideoCapture(st.session_state.tmp_path)
-        total_frames = int(cap_temp.get(cv2.CAP_PROP_FRAME_COUNT))
-        fps_raw = cap_temp.get(cv2.CAP_PROP_FPS)
-        cap_temp.release()
-
-        st.session_state.fps_known = bool(fps_raw and fps_raw > 0)
-        st.session_state.duration = total_frames / (fps_raw if st.session_state.fps_known else FALLBACK_FPS)
-        st.session_state.file_id = file_id
-        st.session_state.results = []
-        st.session_state.pop("video_bytes", None)
-        st.session_state.protocol_df = make_protocol_df([("hombro", "flexion")], "Derecho", st.session_state.duration)
-        st.session_state.editor_version += 1
-
-    duration = st.session_state.duration
-    tmp_path = st.session_state.tmp_path
-
-    if not st.session_state.fps_known:
-        st.warning(
-            "No fue posible determinar los FPS del video. El ROM puede analizarse, "
-            "pero la velocidad angular no será informada."
-        )
-
-    with st.expander("Ver video original"):
-        st.video(uploaded_file.getvalue())
-    st.caption(f"Duración del video: {duration:.1f} s")
-
-    st.header("2. Qué quieres evaluar")
-    mode = st.radio("Modo de evaluación", [MODE_AUTO, MODE_SEGMENTS], horizontal=True)
-
-    # ==================================================================
-    # MODO AUTOMÁTICO
-    # ==================================================================
-    if mode == MODE_AUTO:
-        st.write(
-            "Elige las articulaciones y los movimientos. La app separa cada movimiento por la "
-            "dirección del ángulo y por la vista de cámara, sin que tengas que indicar tiempos."
-        )
-        joint_keys = st.multiselect(
-            "Articulaciones", AUTO_JOINTS, default=["hombro", "codo"],
-            format_func=lambda k: BODY_PART_LABELS[k],
-        )
-        selection = {}
-        for bp in joint_keys:
-            opts = [mid for (b, mid) in AUTO_MOVEMENTS if b == bp]
-            chosen = st.multiselect(
-                f"Movimientos de {BODY_PART_LABELS[bp].lower()}", opts, default=opts,
-                key=f"auto_mov_{bp}",
-                format_func=lambda mid, bp=bp: get_movement(bp, mid)["label"],
-            )
-            if chosen:
-                selection[bp] = chosen
-
-        ca, cb = st.columns(2)
-        side_choice = ca.selectbox("Lado a evaluar", ["Izquierdo", "Derecho", "Ambos"], index=1)
-        view_choice = cb.selectbox("Vista de cámara", list(VIEW_MODES.keys()))
-        view_mode = VIEW_MODES[view_choice]
-
-        start_sec, end_sec = st.slider(
-            "Recorte del video (opcional)", 0.0, float(duration), (0.0, float(duration)), step=0.1
-        )
-
-        needed_views = sorted({AUTO_MOVEMENTS[(bp, m)][0] for bp in selection for m in selection[bp]})
-        if view_mode == "auto" and len(needed_views) > 1:
-            st.info(
-                "Cada movimiento se mide solo en los frames donde la cámara ve la vista adecuada: "
-                "**lateral** (de perfil) para flexión/extensión y **frontal** para abducción/aducción. "
-                "El paciente debe girarse hacia la posición correcta para cada grupo de movimientos."
-            )
-        elif view_mode in ("lateral", "frontal"):
-            missing = [movement_label(bp, m) for bp in selection for m in selection[bp]
-                       if AUTO_MOVEMENTS[(bp, m)][0] != view_mode]
-            if missing:
-                st.warning(
-                    f"Con la vista fija en {view_mode}, estos movimientos no se podrán medir: "
-                    + ", ".join(missing)
-                )
-        st.caption("Muñeca y rotaciones de hombro/cadera no están en este modo: usa el modo «Por tramos».")
-
-        if st.button("Procesar evaluación", disabled=not selection):
-            sides = ["left", "right"] if side_choice == "Ambos" else [SIDE_LABELS[side_choice]]
-            groups = build_auto_groups(selection, sides)
-            with st.spinner("Procesando cinemática y velocidad angular..."):
-                video_bytes, meta = process_video_auto(
-                    tmp_path, groups, target_fps, preview_placeholder, start_sec, end_sec, view_mode
-                )
-                results = summarize_auto(groups, meta["sample_period"], start_sec, end_sec)
-            store_results(results, video_bytes)
-
-    # ==================================================================
-    # MODO POR TRAMOS
-    # ==================================================================
-    else:
-        st.write(
-            "Define en qué segundo empieza y termina cada movimiento. "
-            "Puedes agregar filas, borrarlas o cargar el protocolo completo de tren superior."
-        )
-
-        cpre1, cpre2, cpre3 = st.columns([2, 2, 1])
-        preset_side = cpre1.selectbox("Lado del protocolo", list(SIDE_LABELS.keys()), index=1)
-        if cpre2.button("Cargar protocolo de tren superior"):
-            st.session_state.protocol_df = make_protocol_df(UPPER_LIMB_PROTOCOL, preset_side, duration)
+    if multi_files:
+        files_id = tuple(f"{f.name}-{f.size}" for f in multi_files)
+        if st.session_state.get("multi_files_id") != files_id:
+            rows = [{COL_FILE: f.name, COL_MOV: "Hombro - Flexión", COL_SIDE: "Derecho"} for f in multi_files]
+            st.session_state.multi_table = pd.DataFrame(rows, columns=[COL_FILE, COL_MOV, COL_SIDE])
+            st.session_state.multi_files_id = files_id
             st.session_state.editor_version += 1
-            st.rerun()
-        if cpre3.button("Limpiar"):
-            st.session_state.protocol_df = make_protocol_df([], preset_side, duration).iloc[0:0]
-            st.session_state.editor_version += 1
-            st.rerun()
+            st.session_state.results = []
+            st.session_state.pop("video_bytes", None)
+            st.session_state.pop("multi_videos", None)
 
-        st.caption(
-            "El protocolo de tren superior reparte los tiempos en partes iguales: "
-            "ajusta Inicio y Fin de cada fila según tu video."
-        )
-
-        edited_df = st.data_editor(
-            st.session_state.protocol_df,
-            key=f"protocol_editor_{st.session_state.editor_version}",
-            num_rows="dynamic",
-            use_container_width=True,
+        st.write("Indica qué movimiento y lado corresponde a cada video:")
+        edited_multi = st.data_editor(
+            st.session_state.multi_table,
+            key=f"multi_editor_{st.session_state.editor_version}",
+            use_container_width=True, hide_index=True, num_rows="fixed",
             column_config={
+                COL_FILE: st.column_config.TextColumn(COL_FILE, disabled=True),
                 COL_MOV: st.column_config.SelectboxColumn(COL_MOV, options=list(MOVE_LABEL_TO_KEY.keys()), required=True, width="medium"),
                 COL_SIDE: st.column_config.SelectboxColumn(COL_SIDE, options=list(SIDE_LABELS.keys()), required=True),
-                COL_START: st.column_config.NumberColumn(COL_START, min_value=0.0, step=0.1, format="%.1f"),
-                COL_END: st.column_config.NumberColumn(COL_END, min_value=0.0, step=0.1, format="%.1f"),
             },
         )
 
-        segments, errors = parse_protocol(edited_df, duration)
-        for err in errors:
-            st.error(err)
+        if st.button("Procesar videos"):
+            files_by_name = {f.name: f for f in multi_files}
+            all_results, all_videos = [], {}
+            progress = st.progress(0.0)
+            for i, row in edited_multi.reset_index(drop=True).iterrows():
+                f = files_by_name[row[COL_FILE]]
+                bp, mov_id = MOVE_LABEL_TO_KEY[row[COL_MOV]]
+                side_label = row[COL_SIDE]
+                label = f"{movement_label(bp, mov_id)} ({side_label})"
+                preview_placeholder.info(f"⏳ Procesando: {label} ({f.name})")
 
-        views_needed = sorted({seg["mov"]["view"] for seg in segments})
-        if len(views_needed) > 1:
-            st.info(
-                "Este protocolo mezcla movimientos de vista **lateral** y **frontal**. Con una sola cámara "
-                "fija, el paciente debe girar (de frente a de perfil) entre los tramos correspondientes, "
-                "y cada tramo debe comenzar cuando ya esté en la posición correcta."
+                with tempfile.NamedTemporaryFile(delete=False, suffix=".mp4") as tmp:
+                    tmp.write(f.getvalue())
+                    video_path = tmp.name
+
+                cap_t = cv2.VideoCapture(video_path)
+                total_frames = int(cap_t.get(cv2.CAP_PROP_FRAME_COUNT))
+                fps_raw = cap_t.get(cv2.CAP_PROP_FPS)
+                cap_t.release()
+                fps_known = bool(fps_raw and fps_raw > 0)
+                dur = total_frames / (fps_raw if fps_known else FALLBACK_FPS)
+                if dur <= 0:
+                    st.warning(f"{f.name}: no se pudo leer el video, se omite.")
+                    try:
+                        os.remove(video_path)
+                    except Exception:
+                        pass
+                    continue
+
+                color_hex = SEGMENT_PALETTE[i % len(SEGMENT_PALETTE)]
+                segment = {
+                    "idx": 0, "bp": bp, "mov_id": mov_id, "mov": get_movement(bp, mov_id),
+                    "side": SIDE_LABELS[side_label], "side_label": side_label, "label": label,
+                    "start": 0.0, "end": dur, "color_hex": color_hex, "color_bgr": hex_to_bgr(color_hex),
+                }
+
+                video_bytes, meta = process_video_protocol(
+                    video_path, [segment], target_fps, preview_placeholder, blur_face=blur_face
+                )
+                result = summarize_segments([segment], meta["sample_period"])[0]
+                all_results.append(result)
+                all_videos[label] = video_bytes
+
+                try:
+                    os.remove(video_path)
+                except Exception:
+                    pass
+                progress.progress((i + 1) / len(edited_multi))
+
+            progress.empty()
+            if all_results:
+                store_results(all_results, multi_videos=all_videos)
+
+# ======================================================================
+# MODO UN SOLO VIDEO (automático o por tramos)
+# ======================================================================
+else:
+    st.header("2. Video")
+    uploaded_file = st.file_uploader("Sube el video del paciente", type=["mp4", "mov", "avi"])
+
+    if uploaded_file is not None:
+        file_id = f"{uploaded_file.name}-{uploaded_file.size}"
+
+        # Solo se escribe/lee el video cuando cambia el archivo (no en cada rerun)
+        if st.session_state.file_id != file_id:
+            old_path = st.session_state.get("tmp_path")
+            if old_path:
+                try:
+                    os.remove(old_path)
+                except Exception:
+                    pass
+            with tempfile.NamedTemporaryFile(delete=False, suffix=".mp4") as tmp:
+                tmp.write(uploaded_file.getvalue())
+                st.session_state.tmp_path = tmp.name
+
+            cap_temp = cv2.VideoCapture(st.session_state.tmp_path)
+            total_frames = int(cap_temp.get(cv2.CAP_PROP_FRAME_COUNT))
+            fps_raw = cap_temp.get(cv2.CAP_PROP_FPS)
+            cap_temp.release()
+
+            st.session_state.fps_known = bool(fps_raw and fps_raw > 0)
+            st.session_state.duration = total_frames / (fps_raw if st.session_state.fps_known else FALLBACK_FPS)
+            st.session_state.file_id = file_id
+            st.session_state.results = []
+            st.session_state.pop("video_bytes", None)
+            st.session_state.protocol_df = make_protocol_df([("hombro", "flexion")], "Derecho", st.session_state.duration)
+            st.session_state.editor_version += 1
+
+        duration = st.session_state.duration
+        tmp_path = st.session_state.tmp_path
+
+        if not st.session_state.fps_known:
+            st.warning(
+                "No fue posible determinar los FPS del video. El ROM puede analizarse, "
+                "pero la velocidad angular no será informada."
             )
 
-        if st.button("Procesar protocolo", disabled=(len(segments) == 0 or len(errors) > 0)):
-            with st.spinner("Procesando cinemática y velocidad angular..."):
-                video_bytes, meta = process_video_protocol(tmp_path, segments, target_fps, preview_placeholder)
-                results = summarize_segments(segments, meta["sample_period"])
-            store_results(results, video_bytes)
+        with st.expander("Ver video original"):
+            st.video(uploaded_file.getvalue())
+        st.caption(f"Duración del video: {duration:.1f} s")
+
+        st.header("3. Qué quieres evaluar")
+
+        # ==================================================================
+        # MODO AUTOMÁTICO
+        # ==================================================================
+        if mode == MODE_AUTO:
+            st.write(
+                "Elige las articulaciones y los movimientos. La app separa cada movimiento por la "
+                "dirección del ángulo y por la vista de cámara, sin que tengas que indicar tiempos."
+            )
+            joint_keys = st.multiselect(
+                "Articulaciones", AUTO_JOINTS, default=["hombro", "codo"],
+                format_func=lambda k: BODY_PART_LABELS[k],
+            )
+            selection = {}
+            for bp in joint_keys:
+                opts = [mid for (b, mid) in AUTO_MOVEMENTS if b == bp]
+                chosen = st.multiselect(
+                    f"Movimientos de {BODY_PART_LABELS[bp].lower()}", opts, default=opts,
+                    key=f"auto_mov_{bp}",
+                    format_func=lambda mid, bp=bp: get_movement(bp, mid)["label"],
+                )
+                if chosen:
+                    selection[bp] = chosen
+
+            ca, cb = st.columns(2)
+            side_choice = ca.selectbox("Lado a evaluar", ["Izquierdo", "Derecho", "Ambos"], index=1)
+            view_choice = cb.selectbox("Vista de cámara", list(VIEW_MODES.keys()))
+            view_mode = VIEW_MODES[view_choice]
+
+            start_sec, end_sec = st.slider(
+                "Recorte del video (opcional)", 0.0, float(duration), (0.0, float(duration)), step=0.1
+            )
+
+            needed_views = sorted({AUTO_MOVEMENTS[(bp, m)][0] for bp in selection for m in selection[bp]})
+            if view_mode == "auto" and len(needed_views) > 1:
+                st.info(
+                    "Cada movimiento se mide solo en los frames donde la cámara ve la vista adecuada: "
+                    "**lateral** (de perfil) para flexión/extensión y **frontal** para abducción/aducción. "
+                    "El paciente debe girarse hacia la posición correcta para cada grupo de movimientos."
+                )
+            elif view_mode in ("lateral", "frontal"):
+                missing = [movement_label(bp, m) for bp in selection for m in selection[bp]
+                           if AUTO_MOVEMENTS[(bp, m)][0] != view_mode]
+                if missing:
+                    st.warning(
+                        f"Con la vista fija en {view_mode}, estos movimientos no se podrán medir: "
+                        + ", ".join(missing)
+                    )
+
+            if st.button("Procesar evaluación", disabled=not selection):
+                sides = ["left", "right"] if side_choice == "Ambos" else [SIDE_LABELS[side_choice]]
+                groups = build_auto_groups(selection, sides)
+                with st.spinner("Procesando cinemática y velocidad angular..."):
+                    video_bytes, meta = process_video_auto(
+                        tmp_path, groups, target_fps, preview_placeholder, start_sec, end_sec, view_mode,
+                        blur_face=blur_face,
+                    )
+                    results = summarize_auto(groups, meta["sample_period"], start_sec, end_sec)
+                store_results(results, video_bytes=video_bytes)
+
+        # ==================================================================
+        # MODO POR TRAMOS
+        # ==================================================================
+        else:
+            st.write(
+                "Define en qué segundo empieza y termina cada movimiento. "
+                "Puedes agregar filas, borrarlas o cargar el protocolo de hombro y codo."
+            )
+
+            cpre1, cpre2, cpre3 = st.columns([2, 2, 1])
+            preset_side = cpre1.selectbox("Lado del protocolo", list(SIDE_LABELS.keys()), index=1)
+            if cpre2.button("Cargar protocolo de hombro y codo"):
+                st.session_state.protocol_df = make_protocol_df(UPPER_LIMB_PROTOCOL, preset_side, duration)
+                st.session_state.editor_version += 1
+                st.rerun()
+            if cpre3.button("Limpiar"):
+                st.session_state.protocol_df = make_protocol_df([], preset_side, duration).iloc[0:0]
+                st.session_state.editor_version += 1
+                st.rerun()
+
+            st.caption(
+                "El protocolo de hombro y codo reparte los tiempos en partes iguales: "
+                "ajusta Inicio y Fin de cada fila según tu video."
+            )
+
+            edited_df = st.data_editor(
+                st.session_state.protocol_df,
+                key=f"protocol_editor_{st.session_state.editor_version}",
+                num_rows="dynamic",
+                use_container_width=True,
+                column_config={
+                    COL_MOV: st.column_config.SelectboxColumn(COL_MOV, options=list(MOVE_LABEL_TO_KEY.keys()), required=True, width="medium"),
+                    COL_SIDE: st.column_config.SelectboxColumn(COL_SIDE, options=list(SIDE_LABELS.keys()), required=True),
+                    COL_START: st.column_config.NumberColumn(COL_START, min_value=0.0, step=0.1, format="%.1f"),
+                    COL_END: st.column_config.NumberColumn(COL_END, min_value=0.0, step=0.1, format="%.1f"),
+                },
+            )
+
+            segments, errors = parse_protocol(edited_df, duration)
+            for err in errors:
+                st.error(err)
+
+            views_needed = sorted({seg["mov"]["view"] for seg in segments})
+            if len(views_needed) > 1:
+                st.info(
+                    "Este protocolo mezcla movimientos de vista **lateral** y **frontal**. Con una sola cámara "
+                    "fija, el paciente debe girar (de frente a de perfil) entre los tramos correspondientes, "
+                    "y cada tramo debe comenzar cuando ya esté en la posición correcta."
+                )
+
+            if st.button("Procesar protocolo", disabled=(len(segments) == 0 or len(errors) > 0)):
+                with st.spinner("Procesando cinemática y velocidad angular..."):
+                    video_bytes, meta = process_video_protocol(
+                        tmp_path, segments, target_fps, preview_placeholder, blur_face=blur_face
+                    )
+                    results = summarize_segments(segments, meta["sample_period"])
+                store_results(results, video_bytes=video_bytes)
 
 # ----------------------------------------------------------------------
 if st.session_state.results:
@@ -1152,13 +1296,18 @@ if st.session_state.results:
 
     if "video_bytes" in st.session_state:
         st.video(st.session_state.video_bytes)
+    elif "multi_videos" in st.session_state:
+        st.caption("Video procesado por cada movimiento:")
+        for label, vbytes in st.session_state.multi_videos.items():
+            with st.expander(label):
+                st.video(vbytes)
 
-    st.header("3. Evolución temporal por movimiento")
+    st.header("4. Evolución temporal por movimiento")
     fig = make_protocol_chart(results)
     st.pyplot(fig)
     chart_png = fig_to_png_bytes(fig)
 
-    st.header("4. Resultados clínicos")
+    st.header("5. Resultados clínicos")
     results_df = pd.DataFrame([{
         "Movimiento": r["title"],
         "Lado": r["side"],
@@ -1182,7 +1331,7 @@ if st.session_state.results:
         elif r["max"] is None:
             st.warning(f"{r['title']} ({r['side']}): no se detectó movimiento en esa dirección.")
 
-    st.header("5. Registro de sesión y Observaciones")
+    st.header("6. Registro de sesión y Observaciones")
     p1, p2, p3 = st.columns(3)
     patient_name = p1.text_input("Nombre del paciente")
     patient_run = p2.text_input("RUN", placeholder="12.345.678-9")
