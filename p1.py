@@ -1,6 +1,6 @@
 """
-M.M. - MotionMetrics  (versión con PROTOCOLO MULTI-MOVIMIENTO)
-
+M.M. - MotionMetrics
+Modos: Automático (un video) y Varios videos (un movimiento por video).
 """
 
 import io
@@ -80,13 +80,6 @@ MOVEMENTS = {
     ],
 }
 
-# Protocolo predefinido: movimientos de hombro y codo (medibles de forma confiable en 2D)
-UPPER_LIMB_PROTOCOL = [
-    ("hombro", "flexion"), ("hombro", "extension"),
-    ("hombro", "abduccion"), ("hombro", "aduccion"),
-    ("codo", "flexion"), ("codo", "extension"),
-]
-
 # --- Parámetros ajustables (candidatos a optimizar en la fase piloto) ---
 VISIBILITY_MIN = 0.65
 SMOOTH_WINDOW = 3
@@ -119,7 +112,7 @@ SEGMENT_PALETTE = [
 ]
 
 SIDE_LABELS = {"Izquierdo": "left", "Derecho": "right"}
-COL_MOV, COL_SIDE, COL_START, COL_END = "Movimiento", "Lado", "Inicio (s)", "Fin (s)"
+COL_MOV, COL_SIDE = "Movimiento", "Lado"
 
 
 def movement_label(bp, mov_id):
@@ -303,6 +296,7 @@ def analyze_frame_segments(frame, landmarker, active_segments, timestamp_ms, blu
     Analiza un frame para los tramos activos en ese instante.
     Devuelve (frame_dibujado, {idx_tramo: ángulo suavizado o None}).
     Un ángulo de baja confianza devuelve None (no entra a resultados ni suavizado).
+    (Usado por el modo "Varios videos": cada video es un único tramo completo.)
     """
     rgb = cv2.cvtColor(frame, cv2.COLOR_BGR2RGB)
     mp_image = mp.Image(image_format=mp.ImageFormat.SRGB, data=rgb)
@@ -379,6 +373,7 @@ def process_video_protocol(video_path, segments, target_fps, preview_placeholder
     """
     Procesa el video UNA sola vez. Cada tramo acumula su propia serie
     [(t, ángulo)] únicamente con frames válidos dentro de su ventana.
+    (En el modo "Varios videos" se llama con un único tramo = video completo.)
     """
     landmarker = create_landmarker()
     cap = cv2.VideoCapture(video_path)
@@ -413,7 +408,7 @@ def process_video_protocol(video_path, segments, target_fps, preview_placeholder
         seg["buffer"], seg["series"], seg["sampled"] = [], [], 0
 
     frames_processed = 0
-    preview_placeholder.info("⏳ Procesando protocolo... ")
+    preview_placeholder.info("⏳ Procesando... ")
 
     while frames_processed <= total_frames:
         ret, frame = cap.read()
@@ -485,66 +480,7 @@ def summarize_segments(segments, sample_period):
     return results
 
 # ----------------------------------------------------------------------------
-# 4. Protocolo (tabla de tramos)
-# ----------------------------------------------------------------------------
-
-def make_protocol_df(keys, side_label, duration):
-    """Reparte los movimientos en tramos iguales a lo largo del video."""
-    n = max(1, len(keys))
-    seg_len = duration / n
-    rows = []
-    for i, (bp, mov_id) in enumerate(keys):
-        rows.append({
-            COL_MOV: movement_label(bp, mov_id),
-            COL_SIDE: side_label,
-            COL_START: round(i * seg_len, 1),
-            COL_END: round(min((i + 1) * seg_len, duration), 1),
-        })
-    return pd.DataFrame(rows, columns=[COL_MOV, COL_SIDE, COL_START, COL_END])
-
-
-def parse_protocol(df, duration):
-    """Valida la tabla y devuelve (tramos, errores)."""
-    segments, errors = [], []
-    for i, row in df.reset_index(drop=True).iterrows():
-        vals = [row.get(COL_MOV), row.get(COL_SIDE), row.get(COL_START), row.get(COL_END)]
-        if all(pd.isna(v) for v in vals):
-            continue  # fila vacía
-        if any(pd.isna(v) for v in vals):
-            errors.append(f"Fila {i + 1}: completa movimiento, lado, inicio y fin.")
-            continue
-        mov_label, side_label, start, end = vals[0], vals[1], float(vals[2]), float(vals[3])
-        if mov_label not in MOVE_LABEL_TO_KEY:
-            errors.append(f"Fila {i + 1}: movimiento no reconocido.")
-            continue
-        if start >= end:
-            errors.append(f"Fila {i + 1} ({mov_label}): el inicio debe ser menor que el fin.")
-            continue
-        if end > duration + 0.05:
-            errors.append(f"Fila {i + 1} ({mov_label}): el fin supera la duración del video ({duration:.1f} s).")
-            continue
-
-        bp, mov_id = MOVE_LABEL_TO_KEY[mov_label]
-        idx = len(segments)
-        color_hex = SEGMENT_PALETTE[idx % len(SEGMENT_PALETTE)]
-        segments.append({
-            "idx": idx,
-            "bp": bp,
-            "mov_id": mov_id,
-            "mov": get_movement(bp, mov_id),
-            "side": SIDE_LABELS[side_label],
-            "side_label": side_label,
-            "label": mov_label,
-            "start": start,
-            "end": end,
-            "color_hex": color_hex,
-            "color_bgr": hex_to_bgr(color_hex),
-        })
-    return segments, errors
-
-
-# ----------------------------------------------------------------------------
-# 4b. Modo automático: el usuario elige QUÉ evaluar, sin definir tiempos
+# 4. Modo automático: el usuario elige QUÉ evaluar, sin definir tiempos
 # ----------------------------------------------------------------------------
 # Movimientos que se pueden separar automáticamente usando el signo del ángulo.
 # (articulación, movimiento) -> (vista requerida, dirección +1 / -1)
@@ -844,22 +780,41 @@ def summarize_auto(groups, sample_period, start_sec, end_sec):
 # ----------------------------------------------------------------------------
 
 def make_protocol_chart(results):
-    fig, ax = plt.subplots(figsize=(9, 5))
-    for r in results:
-        if not r["series"]:
-            continue
-        ts = [p[0] for p in r["series"]]
-        angs = [p[1] for p in r["series"]]
-        side_short = "Izq" if r["side"] == "Izquierdo" else "Der"
-        ax.plot(ts, angs, color=r["color_hex"], linewidth=2, label=f"{r['title']} ({side_short})")
-        if r.get("shade", True):
-            ax.axvspan(r["start"], r["end"], color=r["color_hex"], alpha=0.05)
+    """Un gráfico independiente por movimiento (cuadrícula de 2 columnas)."""
+    n = max(1, len(results))
+    ncols = 1 if n == 1 else 2
+    nrows = math.ceil(n / ncols)
+    fig, axes = plt.subplots(nrows, ncols, figsize=(9, 3.0 * nrows), squeeze=False)
+    flat = axes.flatten()
 
-    ax.set_ylim(0, 180)
-    ax.set_xlabel("Tiempo (s)")
-    ax.set_ylabel("Ángulo (°)")
-    ax.grid(alpha=0.3)
-    ax.legend(loc="upper center", bbox_to_anchor=(0.5, -0.15), ncol=3, fontsize=7, frameon=False)
+    for ax, r in zip(flat, results):
+        side_short = "Izq" if r["side"] == "Izquierdo" else "Der"
+        ax.set_title(f"{r['title']} ({side_short})", fontsize=10, fontweight="bold", color=r["color_hex"])
+        ax.grid(alpha=0.3)
+        ax.set_xlabel("Tiempo (s)", fontsize=8)
+        ax.set_ylabel("Ángulo (°)", fontsize=8)
+        ax.tick_params(labelsize=8)
+
+        top = r["norm_max"]
+        if r["series"]:
+            ts = [p[0] for p in r["series"]]
+            angs = [p[1] for p in r["series"]]
+            ax.plot(ts, angs, color=r["color_hex"], linewidth=2)
+            ax.axhline(r["max"], color=r["color_hex"], linestyle="--", linewidth=1, alpha=0.7,
+                       label=f"Máximo: {r['max']:.0f}°")
+            top = max(top, r["max"])
+        else:
+            ax.text(0.5, 0.5, "Sin datos suficientes", transform=ax.transAxes,
+                    ha="center", va="center", fontsize=9, color="gray")
+
+        ax.axhline(r["norm_max"], color="gray", linestyle=":", linewidth=1,
+                   label=f"Rango AAOS máx: {r['norm_max']}°")
+        ax.set_ylim(0, max(10, top * 1.15))
+        ax.legend(fontsize=7, loc="upper right", frameon=False)
+
+    for ax in flat[n:]:
+        ax.set_visible(False)
+
     fig.tight_layout()
     return fig
 
@@ -986,13 +941,29 @@ def sessions_to_dataframe(sessions):
 # ----------------------------------------------------------------------------
 st.set_page_config(page_title="M.M. - MotionMetrics", page_icon="📐", layout="centered")
 st.title("M.M. - MotionMetrics 📐")
-st.caption("Análisis cinemático, goniometría 2D y velocidad angular. Varios movimientos en un solo video.")
+st.caption("Análisis cinemático, goniometría 2D y velocidad angular.")
 
-MODE_AUTO = "Automático: elijo qué evaluar"
-MODE_SEGMENTS = "Por tramos: defino los tiempos"
+MODE_AUTO = "Automático: un video, elijo qué evaluar"
 MODE_MULTI = "Varios videos: un movimiento por video"
 VIEW_MODES = {"Detectar automáticamente": "auto", "Siempre lateral (de perfil)": "lateral", "Siempre frontal (de frente)": "frontal"}
 COL_FILE = "Archivo"
+
+
+def save_video_to_disk(video_bytes):
+    """Guarda el video procesado en disco y devuelve la ruta (evita acumular bytes en RAM)."""
+    with tempfile.NamedTemporaryFile(delete=False, suffix=".mp4") as tmp:
+        tmp.write(video_bytes)
+        return tmp.name
+
+
+def cleanup_multi_videos():
+    """Borra los videos procesados de la corrida anterior (modo varios videos)."""
+    for path in st.session_state.get("multi_videos", {}).values():
+        try:
+            os.remove(path)
+        except Exception:
+            pass
+    st.session_state.pop("multi_videos", None)
 
 
 def store_results(results, video_bytes=None, multi_videos=None):
@@ -1006,14 +977,15 @@ def store_results(results, video_bytes=None, multi_videos=None):
         st.success("✅ Procesamiento completado.")
         st.session_state.results = results
         st.session_state.pop("video_bytes", None)
-        st.session_state.pop("multi_videos", None)
+        if multi_videos is None:
+            cleanup_multi_videos()
         if video_bytes is not None:
             st.session_state.video_bytes = video_bytes
         if multi_videos is not None:
             st.session_state.multi_videos = multi_videos
 
 
-for key, default in [("sessions", []), ("results", []), ("editor_version", 0), ("protocol_df", None), ("file_id", None)]:
+for key, default in [("sessions", []), ("results", []), ("editor_version", 0), ("file_id", None)]:
     if key not in st.session_state:
         st.session_state[key] = default
 
@@ -1028,7 +1000,7 @@ if not blur_face:
         "descarga que lo incluya. Actívalo salvo que tengas una razón clínica específica para no hacerlo."
     )
 
-mode = st.radio("¿Cómo grabaste al paciente?", [MODE_AUTO, MODE_SEGMENTS, MODE_MULTI])
+mode = st.radio("¿Cómo grabaste al paciente?", [MODE_AUTO, MODE_MULTI])
 if mode == MODE_MULTI:
     st.caption("Un video distinto por cada movimiento (por ejemplo, grabaste cada movimiento por separado).")
 else:
@@ -1056,7 +1028,7 @@ if mode == MODE_MULTI:
             st.session_state.editor_version += 1
             st.session_state.results = []
             st.session_state.pop("video_bytes", None)
-            st.session_state.pop("multi_videos", None)
+            cleanup_multi_videos()
 
         st.write("Indica qué movimiento y lado corresponde a cada video:")
         edited_multi = st.data_editor(
@@ -1071,6 +1043,7 @@ if mode == MODE_MULTI:
         )
 
         if st.button("Procesar videos"):
+            cleanup_multi_videos()
             files_by_name = {f.name: f for f in multi_files}
             all_results, all_videos = [], {}
             progress = st.progress(0.0)
@@ -1082,7 +1055,7 @@ if mode == MODE_MULTI:
                 preview_placeholder.info(f"⏳ Procesando: {label} ({f.name})")
 
                 with tempfile.NamedTemporaryFile(delete=False, suffix=".mp4") as tmp:
-                    tmp.write(f.getvalue())
+                    tmp.write(f.getbuffer())
                     video_path = tmp.name
 
                 cap_t = cv2.VideoCapture(video_path)
@@ -1111,7 +1084,9 @@ if mode == MODE_MULTI:
                 )
                 result = summarize_segments([segment], meta["sample_period"])[0]
                 all_results.append(result)
-                all_videos[label] = video_bytes
+                # Se guarda en disco y se libera de memoria inmediatamente
+                all_videos[label] = save_video_to_disk(video_bytes)
+                del video_bytes
 
                 try:
                     os.remove(video_path)
@@ -1124,7 +1099,7 @@ if mode == MODE_MULTI:
                 store_results(all_results, multi_videos=all_videos)
 
 # ======================================================================
-# MODO UN SOLO VIDEO (automático o por tramos)
+# MODO AUTOMÁTICO: un solo video
 # ======================================================================
 else:
     st.header("2. Video")
@@ -1142,7 +1117,7 @@ else:
                 except Exception:
                     pass
             with tempfile.NamedTemporaryFile(delete=False, suffix=".mp4") as tmp:
-                tmp.write(uploaded_file.getvalue())
+                tmp.write(uploaded_file.getbuffer())
                 st.session_state.tmp_path = tmp.name
 
             cap_temp = cv2.VideoCapture(st.session_state.tmp_path)
@@ -1155,7 +1130,6 @@ else:
             st.session_state.file_id = file_id
             st.session_state.results = []
             st.session_state.pop("video_bytes", None)
-            st.session_state.protocol_df = make_protocol_df([("hombro", "flexion")], "Derecho", st.session_state.duration)
             st.session_state.editor_version += 1
 
         duration = st.session_state.duration
@@ -1168,127 +1142,64 @@ else:
             )
 
         with st.expander("Ver video original"):
-            st.video(uploaded_file.getvalue())
+            st.video(tmp_path)
         st.caption(f"Duración del video: {duration:.1f} s")
 
         st.header("3. Qué quieres evaluar")
-
-        # ==================================================================
-        # MODO AUTOMÁTICO
-        # ==================================================================
-        if mode == MODE_AUTO:
-            st.write(
-                "Elige las articulaciones y los movimientos. La app separa cada movimiento por la "
-                "dirección del ángulo y por la vista de cámara, sin que tengas que indicar tiempos."
+        st.write(
+            "Elige las articulaciones y los movimientos. La app separa cada movimiento por la "
+            "dirección del ángulo y por la vista de cámara, sin que tengas que indicar tiempos."
+        )
+        joint_keys = st.multiselect(
+            "Articulaciones", AUTO_JOINTS, default=["hombro", "codo"],
+            format_func=lambda k: BODY_PART_LABELS[k],
+        )
+        selection = {}
+        for bp in joint_keys:
+            opts = [mid for (b, mid) in AUTO_MOVEMENTS if b == bp]
+            chosen = st.multiselect(
+                f"Movimientos de {BODY_PART_LABELS[bp].lower()}", opts, default=opts,
+                key=f"auto_mov_{bp}",
+                format_func=lambda mid, bp=bp: get_movement(bp, mid)["label"],
             )
-            joint_keys = st.multiselect(
-                "Articulaciones", AUTO_JOINTS, default=["hombro", "codo"],
-                format_func=lambda k: BODY_PART_LABELS[k],
+            if chosen:
+                selection[bp] = chosen
+
+        ca, cb = st.columns(2)
+        side_choice = ca.selectbox("Lado a evaluar", ["Izquierdo", "Derecho", "Ambos"], index=1)
+        view_choice = cb.selectbox("Vista de cámara", list(VIEW_MODES.keys()))
+        view_mode = VIEW_MODES[view_choice]
+
+        start_sec, end_sec = st.slider(
+            "Recorte del video (opcional)", 0.0, float(duration), (0.0, float(duration)), step=0.1
+        )
+
+        needed_views = sorted({AUTO_MOVEMENTS[(bp, m)][0] for bp in selection for m in selection[bp]})
+        if view_mode == "auto" and len(needed_views) > 1:
+            st.info(
+                "Cada movimiento se mide solo en los frames donde la cámara ve la vista adecuada: "
+                "**lateral** (de perfil) para flexión/extensión y **frontal** para abducción/aducción. "
+                "El paciente debe girarse hacia la posición correcta para cada grupo de movimientos."
             )
-            selection = {}
-            for bp in joint_keys:
-                opts = [mid for (b, mid) in AUTO_MOVEMENTS if b == bp]
-                chosen = st.multiselect(
-                    f"Movimientos de {BODY_PART_LABELS[bp].lower()}", opts, default=opts,
-                    key=f"auto_mov_{bp}",
-                    format_func=lambda mid, bp=bp: get_movement(bp, mid)["label"],
-                )
-                if chosen:
-                    selection[bp] = chosen
-
-            ca, cb = st.columns(2)
-            side_choice = ca.selectbox("Lado a evaluar", ["Izquierdo", "Derecho", "Ambos"], index=1)
-            view_choice = cb.selectbox("Vista de cámara", list(VIEW_MODES.keys()))
-            view_mode = VIEW_MODES[view_choice]
-
-            start_sec, end_sec = st.slider(
-                "Recorte del video (opcional)", 0.0, float(duration), (0.0, float(duration)), step=0.1
-            )
-
-            needed_views = sorted({AUTO_MOVEMENTS[(bp, m)][0] for bp in selection for m in selection[bp]})
-            if view_mode == "auto" and len(needed_views) > 1:
-                st.info(
-                    "Cada movimiento se mide solo en los frames donde la cámara ve la vista adecuada: "
-                    "**lateral** (de perfil) para flexión/extensión y **frontal** para abducción/aducción. "
-                    "El paciente debe girarse hacia la posición correcta para cada grupo de movimientos."
-                )
-            elif view_mode in ("lateral", "frontal"):
-                missing = [movement_label(bp, m) for bp in selection for m in selection[bp]
-                           if AUTO_MOVEMENTS[(bp, m)][0] != view_mode]
-                if missing:
-                    st.warning(
-                        f"Con la vista fija en {view_mode}, estos movimientos no se podrán medir: "
-                        + ", ".join(missing)
-                    )
-
-            if st.button("Procesar evaluación", disabled=not selection):
-                sides = ["left", "right"] if side_choice == "Ambos" else [SIDE_LABELS[side_choice]]
-                groups = build_auto_groups(selection, sides)
-                with st.spinner("Procesando cinemática y velocidad angular..."):
-                    video_bytes, meta = process_video_auto(
-                        tmp_path, groups, target_fps, preview_placeholder, start_sec, end_sec, view_mode,
-                        blur_face=blur_face,
-                    )
-                    results = summarize_auto(groups, meta["sample_period"], start_sec, end_sec)
-                store_results(results, video_bytes=video_bytes)
-
-        # ==================================================================
-        # MODO POR TRAMOS
-        # ==================================================================
-        else:
-            st.write(
-                "Define en qué segundo empieza y termina cada movimiento. "
-                "Puedes agregar filas, borrarlas o cargar el protocolo de hombro y codo."
-            )
-
-            cpre1, cpre2, cpre3 = st.columns([2, 2, 1])
-            preset_side = cpre1.selectbox("Lado del protocolo", list(SIDE_LABELS.keys()), index=1)
-            if cpre2.button("Cargar protocolo de hombro y codo"):
-                st.session_state.protocol_df = make_protocol_df(UPPER_LIMB_PROTOCOL, preset_side, duration)
-                st.session_state.editor_version += 1
-                st.rerun()
-            if cpre3.button("Limpiar"):
-                st.session_state.protocol_df = make_protocol_df([], preset_side, duration).iloc[0:0]
-                st.session_state.editor_version += 1
-                st.rerun()
-
-            st.caption(
-                "El protocolo de hombro y codo reparte los tiempos en partes iguales: "
-                "ajusta Inicio y Fin de cada fila según tu video."
-            )
-
-            edited_df = st.data_editor(
-                st.session_state.protocol_df,
-                key=f"protocol_editor_{st.session_state.editor_version}",
-                num_rows="dynamic",
-                use_container_width=True,
-                column_config={
-                    COL_MOV: st.column_config.SelectboxColumn(COL_MOV, options=list(MOVE_LABEL_TO_KEY.keys()), required=True, width="medium"),
-                    COL_SIDE: st.column_config.SelectboxColumn(COL_SIDE, options=list(SIDE_LABELS.keys()), required=True),
-                    COL_START: st.column_config.NumberColumn(COL_START, min_value=0.0, step=0.1, format="%.1f"),
-                    COL_END: st.column_config.NumberColumn(COL_END, min_value=0.0, step=0.1, format="%.1f"),
-                },
-            )
-
-            segments, errors = parse_protocol(edited_df, duration)
-            for err in errors:
-                st.error(err)
-
-            views_needed = sorted({seg["mov"]["view"] for seg in segments})
-            if len(views_needed) > 1:
-                st.info(
-                    "Este protocolo mezcla movimientos de vista **lateral** y **frontal**. Con una sola cámara "
-                    "fija, el paciente debe girar (de frente a de perfil) entre los tramos correspondientes, "
-                    "y cada tramo debe comenzar cuando ya esté en la posición correcta."
+        elif view_mode in ("lateral", "frontal"):
+            missing = [movement_label(bp, m) for bp in selection for m in selection[bp]
+                       if AUTO_MOVEMENTS[(bp, m)][0] != view_mode]
+            if missing:
+                st.warning(
+                    f"Con la vista fija en {view_mode}, estos movimientos no se podrán medir: "
+                    + ", ".join(missing)
                 )
 
-            if st.button("Procesar protocolo", disabled=(len(segments) == 0 or len(errors) > 0)):
-                with st.spinner("Procesando cinemática y velocidad angular..."):
-                    video_bytes, meta = process_video_protocol(
-                        tmp_path, segments, target_fps, preview_placeholder, blur_face=blur_face
-                    )
-                    results = summarize_segments(segments, meta["sample_period"])
-                store_results(results, video_bytes=video_bytes)
+        if st.button("Procesar evaluación", disabled=not selection):
+            sides = ["left", "right"] if side_choice == "Ambos" else [SIDE_LABELS[side_choice]]
+            groups = build_auto_groups(selection, sides)
+            with st.spinner("Procesando cinemática y velocidad angular..."):
+                video_bytes, meta = process_video_auto(
+                    tmp_path, groups, target_fps, preview_placeholder, start_sec, end_sec, view_mode,
+                    blur_face=blur_face,
+                )
+                results = summarize_auto(groups, meta["sample_period"], start_sec, end_sec)
+            store_results(results, video_bytes=video_bytes)
 
 # ----------------------------------------------------------------------
 if st.session_state.results:
@@ -1298,9 +1209,9 @@ if st.session_state.results:
         st.video(st.session_state.video_bytes)
     elif "multi_videos" in st.session_state:
         st.caption("Video procesado por cada movimiento:")
-        for label, vbytes in st.session_state.multi_videos.items():
+        for label, vpath in st.session_state.multi_videos.items():
             with st.expander(label):
-                st.video(vbytes)
+                st.video(vpath)
 
     st.header("4. Evolución temporal por movimiento")
     fig = make_protocol_chart(results)
